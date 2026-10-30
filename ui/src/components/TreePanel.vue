@@ -10,6 +10,7 @@ import {
   IconSearch,
 } from "@halo-dev/components";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { POSTS_LIMIT } from "../api";
 import type { CatNode, StatusFilter } from "../composables/useContent";
 import { postPhase } from "../composables/useContent";
 import { formatDateTime, relativeTime } from "../utils";
@@ -600,7 +601,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="wb-tree__foot">
-      <span>共 {{ counts.all }} 篇</span>
+      <span>{{ counts.all >= POSTS_LIMIT ? `已加载最近 ${POSTS_LIMIT} 篇` : `共 ${counts.all} 篇` }}</span>
       <span>已发布 {{ counts.published }}</span>
       <span>草稿 {{ counts.draft }}</span>
       <span v-if="counts.scheduled">定时 {{ counts.scheduled }}</span>

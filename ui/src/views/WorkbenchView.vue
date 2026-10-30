@@ -440,6 +440,10 @@ watch(consoleHidden, (value) => {
 const viewActive = ref(true);
 
 onActivated(() => {
+  // 停用期间不再轮询，回到页面时补一次刷新
+  if (!viewActive.value) {
+    void refreshSilently();
+  }
   viewActive.value = true;
   applyConsoleHidden();
   mountSidebarArrow();
@@ -518,6 +522,9 @@ function onGlobalKeydown(event: KeyboardEvent) {
 let pollTimer: number | undefined;
 
 function onWindowFocus() {
+  if (!viewActive.value) {
+    return;
+  }
   void refreshSilently();
 }
 
@@ -531,7 +538,7 @@ onMounted(() => {
   window.addEventListener("focus", onWindowFocus);
   window.addEventListener("keydown", onGlobalKeydown);
   pollTimer = window.setInterval(() => {
-    if (document.visibilityState === "visible" && !loading.value) {
+    if (viewActive.value && document.visibilityState === "visible" && !loading.value) {
       void refreshSilently();
     }
   }, 60_000);

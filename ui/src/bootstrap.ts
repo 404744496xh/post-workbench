@@ -96,7 +96,7 @@ export function setupPostsOverride() {
       }
       // 冷启动的首次导航不会触发 afterEach，按最终路由补一次
       await syncChrome(router.currentRoute.value.path);
-    })();
+    })().catch(() => {});
   };
   install();
 }

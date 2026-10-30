@@ -3,6 +3,8 @@ import { consoleApiClient } from "@halo-dev/api-client";
 
 const NOT_DELETED = ["content.halo.run/deleted=false"];
 
+export const POSTS_LIMIT = 5000;
+
 export const BLANK_EDITOR_PATH = "/console/posts/editor";
 
 export function editorPath(name: string) {
@@ -22,7 +24,7 @@ export async function fetchAllPosts(): Promise<ListedPost[]> {
   const first = await query(1);
   const items = [...first.data.items];
   const total = first.data.total ?? items.length;
-  const pages = Math.min(Math.ceil(total / size), 50);
+  const pages = Math.min(Math.ceil(total / size), POSTS_LIMIT / size);
   if (pages > 1) {
     const rest = await Promise.all(
       Array.from({ length: pages - 1 }, (_, index) => query(index + 2)),

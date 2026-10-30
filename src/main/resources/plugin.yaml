@@ -3,16 +3,18 @@ kind: Plugin
 metadata:
   name: post-workbench
 spec:
-  enabled: true
   requires: ">=2.26.0"
   author:
     name: xiahan
     website: https://www.xiahan.asia
-  homepage: https://www.xiahan.asia
+  homepage: https://github.com/404744496xh/post-workbench
+  repo: https://github.com/404744496xh/post-workbench
+  issues: https://github.com/404744496xh/post-workbench/issues
   logo: logo.png
   displayName: "写作台"
   description: "笔记软件式的文章工作台：多级分类树 + 内嵌原生编辑器，支持 Typora 风格 Markdown 写作"
   license:
     - name: "MIT"
+      url: https://github.com/404744496xh/post-workbench/blob/main/LICENSE
   settingName: post-workbench-settings
   configMapName: post-workbench-config
