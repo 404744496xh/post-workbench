@@ -4,6 +4,7 @@ import {
   IconArrowLeft,
   IconBookRead,
   IconClose,
+  IconExternalLinkLine,
   IconFolder,
   IconGrid,
   IconRefreshLine,
@@ -35,6 +36,7 @@ const props = defineProps<{
   error: string;
   selectedName?: string;
   consoleHidden: boolean;
+  overridePosts: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -54,6 +56,8 @@ const emit = defineEmits<{
   (e: "refresh"): void;
   (e: "collapse"): void;
   (e: "toggle-console"): void;
+  (e: "open-native"): void;
+  (e: "move-post", payload: { name: string; category: string | null; label: string }): void;
 }>();
 
 const ALL_KEY = "__all__";
@@ -65,6 +69,8 @@ const searchInput = ref("");
 const search = ref("");
 const expanded = ref(new Set<string>());
 const activeId = ref<string>();
+const draggingName = ref<string>();
+const dropRowId = ref<string>();
 
 let searchTimer: number | undefined;
 watch(searchInput, (value) => {
@@ -110,6 +116,70 @@ function toggle(key: string) {
   }
   expanded.value = next;
 }
+
+function canDropOn(row: Row) {
+  return row.kind === "cat" || (row.kind === "special" && row.special === "uncategorized");
+}
+
+function onDragStart(event: DragEvent, row: Row) {
+  if (!row.post) {
+    return;
+  }
+  if ((event.target as HTMLElement).closest(".wb-row__more")) {
+    event.preventDefault();
+    return;
+  }
+  draggingName.value = row.post.post.metadata.name;
+  hideHover();
+  event.dataTransfer?.setData("text/plain", draggingName.value);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function onDragOver(event: DragEvent, row: Row) {
+  if (!draggingName.value || !canDropOn(row)) {
+    return;
+  }
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+  dropRowId.value = row.id;
+}
+
+function onDragLeave(row: Row) {
+  if (dropRowId.value === row.id) {
+    dropRowId.value = undefined;
+  }
+}
+
+function onDrop(event: DragEvent, row: Row) {
+  const name = draggingName.value;
+  if (!name || !canDropOn(row)) {
+    return;
+  }
+  event.preventDefault();
+  emit("move-post", {
+    name,
+    category: row.kind === "cat" ? row.category!.name : null,
+    label: row.label,
+  });
+  if (!isExpanded(row.id)) {
+    toggle(row.id);
+  }
+  draggingName.value = undefined;
+  dropRowId.value = undefined;
+}
+
+function onDragEnd() {
+  draggingName.value = undefined;
+  dropRowId.value = undefined;
+}
+
+const showUncategorized = computed(
+  () => props.statusFilter === "all" || props.uncategorized.length > 0,
+);
 
 function postRow(post: ListedPost, depth: number, parentKey: string): Row {
   return {
@@ -178,17 +248,19 @@ const rows = computed<Row[]>(() => {
 
   walk(props.categoryTree, 0, result);
 
-  result.push({
-    id: UNCATEGORIZED_KEY,
-    kind: "special",
-    special: "uncategorized",
-    depth: 0,
-    label: "未分类",
-    count: props.uncategorized.length,
-  });
-  if (isExpanded(UNCATEGORIZED_KEY)) {
-    for (const post of props.uncategorized) {
-      result.push(postRow(post, 1, UNCATEGORIZED_KEY));
+  if (showUncategorized.value) {
+    result.push({
+      id: UNCATEGORIZED_KEY,
+      kind: "special",
+      special: "uncategorized",
+      depth: 0,
+      label: "未分类",
+      count: props.uncategorized.length,
+    });
+    if (isExpanded(UNCATEGORIZED_KEY)) {
+      for (const post of props.uncategorized) {
+        result.push(postRow(post, 1, UNCATEGORIZED_KEY));
+      }
     }
   }
   return result;
@@ -443,6 +515,9 @@ onBeforeUnmount(() => {
         >
           <IconGrid />
         </button>
+        <button v-if="overridePosts" class="wb-icon-btn" title="打开原文章视图" @click="emit('open-native')">
+          <IconExternalLinkLine />
+        </button>
         <button class="wb-icon-btn" title="收起分类栏" @click="emit('collapse')">
           <IconArrowLeft />
         </button>
@@ -488,14 +563,30 @@ onBeforeUnmount(() => {
             'is-published': row.post && postPhase(row.post.post) === 'published',
             'is-draft': row.post && postPhase(row.post.post) === 'draft',
             'is-scheduled': row.post && postPhase(row.post.post) === 'scheduled',
+            'is-dragging': row.post && row.post.post.metadata.name === draggingName,
+            'is-drop-hint': !!draggingName && canDropOn(row),
+            'is-drop-target': dropRowId === row.id,
           }"
           :data-row-id="row.id"
           :data-post-name="row.post?.post.metadata.name"
+          :data-category-name="
+            row.kind === 'cat'
+              ? row.category?.name
+              : row.special === 'uncategorized'
+                ? '__uncategorized__'
+                : undefined
+          "
           :style="{ paddingLeft: `${6 + row.depth * 14}px` }"
+          :draggable="row.kind === 'post'"
           @click="activateRow(row)"
           @mouseenter="onRowEnter($event, row)"
           @mouseleave="hideHover"
           @contextmenu="openMenu($event, row)"
+          @dragstart="onDragStart($event, row)"
+          @dragend="onDragEnd"
+          @dragover="onDragOver($event, row)"
+          @dragleave="onDragLeave(row)"
+          @drop="onDrop($event, row)"
         >
           <template v-if="row.kind !== 'post'">
             <span class="wb-caret" :class="{ 'is-open': isExpanded(row.id) }" @click.stop="toggle(row.id)"></span>

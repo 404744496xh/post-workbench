@@ -28,6 +28,7 @@ import {
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { editorPath, patchPostField, publishPost, recyclePost, unpublishPost } from "../api";
+import { bypassNativePosts, isOverridePostsEnabled } from "../bootstrap";
 import CategoryPicker from "../components/CategoryPicker.vue";
 import ContextMenu from "../components/ContextMenu.vue";
 import EditorPane from "../components/EditorPane.vue";
@@ -56,6 +57,7 @@ const selectedName = ref<string | undefined>(
 );
 const blankOpen = ref(false);
 const pendingCategory = ref<string | null>(null);
+const overridePosts = ref(false);
 
 const treeRef = ref<InstanceType<typeof TreePanel>>();
 const editorRef = ref<InstanceType<typeof EditorPane>>();
@@ -216,6 +218,21 @@ async function runPostAction(
   } catch (e) {
     Toast.error(e instanceof Error ? e.message : "操作失败");
   }
+}
+
+async function movePostToCategory(name: string, category: string | null, label: string) {
+  try {
+    await patchPostField(name, "/spec/categories", category ? [category] : []);
+    Toast.success(`已移动到「${label}」`);
+    await refreshSilently();
+  } catch (e) {
+    Toast.error(e instanceof Error ? e.message : "移动失败");
+  }
+}
+
+function openNativePosts() {
+  bypassNativePosts();
+  void router.push("/posts");
 }
 
 function permalinkOf(post: ListedPost) {
@@ -422,6 +439,9 @@ function onWindowFocus() {
 
 onMounted(() => {
   applyConsoleHidden();
+  void isOverridePostsEnabled().then((value) => {
+    overridePosts.value = value;
+  });
   void refresh().catch(() => {});
   window.addEventListener("focus", onWindowFocus);
   window.addEventListener("keydown", onGlobalKeydown);
@@ -464,6 +484,7 @@ onBeforeUnmount(() => {
       :error="error"
       :selected-name="selectedName"
       :console-hidden="consoleHidden"
+      :override-posts="overridePosts"
       @select="selectPost"
       @create="createPost"
       @context-menu="openMenu"
@@ -471,6 +492,8 @@ onBeforeUnmount(() => {
       @refresh="refreshSilently"
       @collapse="toggleTree(true)"
       @toggle-console="consoleHidden = !consoleHidden"
+      @open-native="openNativePosts"
+      @move-post="movePostToCategory($event.name, $event.category, $event.label)"
     />
 
     <div

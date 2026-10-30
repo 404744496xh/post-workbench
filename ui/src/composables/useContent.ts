@@ -40,6 +40,12 @@ function buildTree(nodes: CategoryTreeNode[] | undefined, posts: ListedPost[]): 
   });
 }
 
+function pruneEmpty(nodes: CatNode[]): CatNode[] {
+  return nodes
+    .filter((node) => node.count > 0)
+    .map((node) => ({ ...node, children: pruneEmpty(node.children) }));
+}
+
 export function useContent() {
   const allPosts = shallowRef<ListedPost[]>([]);
   const rawTree = shallowRef<CategoryTreeNode[]>([]);
@@ -81,7 +87,13 @@ export function useContent() {
     return allPosts.value.filter((item) => postPhase(item.post) === statusFilter.value);
   });
 
-  const categoryTree = computed(() => buildTree(rawTree.value, filteredPosts.value));
+  const categoryTree = computed(() => {
+    const tree = buildTree(rawTree.value, filteredPosts.value);
+    if (statusFilter.value === "all") {
+      return tree;
+    }
+    return pruneEmpty(tree);
+  });
 
   const uncategorized = computed(() =>
     filteredPosts.value.filter((item) => !item.post.spec.categories?.length),

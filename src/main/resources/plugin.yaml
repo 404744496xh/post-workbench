@@ -9,7 +9,10 @@ spec:
     name: xiahan
     website: https://www.xiahan.asia
   homepage: https://www.xiahan.asia
+  logo: logo.png
   displayName: "写作台"
   description: "笔记软件式的文章工作台：多级分类树 + 内嵌原生编辑器"
   license:
     - name: "MIT"
+  settingName: post-workbench-settings
+  configMapName: post-workbench-config

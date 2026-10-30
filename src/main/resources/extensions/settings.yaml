@@ -1,0 +1,14 @@
+apiVersion: v1alpha1
+kind: Setting
+metadata:
+  name: post-workbench-settings
+spec:
+  forms:
+    - group: basic
+      label: 基础设置
+      formSchema:
+        - $formkit: checkbox
+          name: overridePosts
+          label: 覆盖文章页
+          help: 开启后打开「文章」页面会直接进入写作台；写作台内提供按钮切回原生文章视图。
+          value: false

@@ -1,7 +1,10 @@
 import { IconRiPencilFill } from "@halo-dev/components";
 import { definePlugin } from "@halo-dev/ui-shared";
 import { defineAsyncComponent, markRaw } from "vue";
+import { setupPostsOverride } from "./bootstrap";
 import "./styles/workbench.css";
+
+setupPostsOverride();
 
 export default definePlugin({
   routes: [
