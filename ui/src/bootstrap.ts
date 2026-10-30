@@ -24,6 +24,14 @@ function getRouter(): any {
   return (document.querySelector("#app") as any)?.__vue_app__?.config?.globalProperties?.$router;
 }
 
+function syncWorkbenchMenu(hidden: boolean) {
+  document.querySelectorAll("aside.sidebar li.menu-item").forEach((item) => {
+    if (item.textContent?.trim() === "写作台") {
+      item.classList.toggle("wb-menu-hidden", hidden);
+    }
+  });
+}
+
 function syncPill(router: any, show: boolean) {
   if (!show) {
     pill?.remove();
@@ -68,16 +76,20 @@ export function setupPostsOverride() {
       return { path: "/workbench" };
     });
     router.afterEach(async (to: any) => {
+      const enabled = await isOverridePostsEnabled();
+      syncWorkbenchMenu(enabled);
       if (to.path !== "/posts") {
         sessionStorage.removeItem(BYPASS_KEY);
         syncPill(router, false);
         return;
       }
-      syncPill(router, await isOverridePostsEnabled());
+      syncPill(router, enabled);
     });
     void (async () => {
       await router.isReady?.();
-      if (!(await isOverridePostsEnabled(true))) {
+      const enabled = await isOverridePostsEnabled(true);
+      syncWorkbenchMenu(enabled);
+      if (!enabled) {
         return;
       }
       const current = router.currentRoute.value;

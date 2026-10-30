@@ -1115,3 +1115,7 @@ body.wb-console-hidden .layout > .main-content {
   font-size: 12px;
   color: var(--wb-faint);
 }
+
+aside.sidebar li.menu-item.wb-menu-hidden {
+  display: none !important;
+}
