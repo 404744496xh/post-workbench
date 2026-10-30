@@ -42,7 +42,16 @@ const titleEl = ref<HTMLInputElement>();
 const vditor = shallowRef<Vditor>();
 const ready = ref(false);
 
+// 与富文本编辑器共用同一个折叠偏好
+const OUTLINE_KEY = "post-workbench:outline-hidden";
+const outlineHidden = ref(localStorage.getItem(OUTLINE_KEY) === "1");
+const outlineAvailable = ref(false);
+const panelOpen = ref(false);
+const outlineFlyout = ref(false);
+const headings = ref<{ level: number; text: string; id: string }[]>([]);
+
 let contentTimer: number | undefined;
+let flyoutTimer: number | undefined;
 
 function isDark() {
   const root = document.documentElement;
@@ -53,31 +62,102 @@ function isDark() {
   );
 }
 
-function syncOutline() {
+// Vditor 渲染大纲时会重写标题 id，因此必须在渲染之后读取标题列表
+function collectHeadings() {
   const instance = vditor.value;
   if (!instance) {
     return;
   }
   instance.vditor.outline.render(instance.vditor);
+  const items = instance.vditor.outline.element.querySelectorAll<HTMLElement>(
+    "[data-target-id]",
+  );
+  const list: { level: number; text: string; id: string }[] = [];
+  items.forEach((item) => {
+    const id = item.getAttribute("data-target-id") || "";
+    const heading = document.getElementById(id);
+    if (!heading) {
+      return;
+    }
+    list.push({
+      level: Math.min(4, Math.max(1, Number(heading.tagName.charAt(1)) || 1)),
+      text: (item.textContent || "").trim(),
+      id,
+    });
+  });
+  headings.value = list;
+  outlineAvailable.value = list.length > 0;
 }
 
-// Vditor 只设置 .vditor-ir 的 scrollTop，而真正的滚动容器是内部的 .vditor-reset
+function applyOutline() {
+  const instance = vditor.value;
+  if (!instance) {
+    return;
+  }
+  instance.vditor.outline.toggle(
+    instance.vditor,
+    !outlineHidden.value && outlineAvailable.value,
+    false,
+  );
+  // 窄屏下 Vditor 会拒绝展开面板，此时一律用折叠轨道
+  panelOpen.value =
+    instance.vditor.outline.element.style.display !== "none";
+}
+
+function syncOutline() {
+  collectHeadings();
+  applyOutline();
+}
+
+function scrollToHeading(id: string) {
+  const heading = document.getElementById(id);
+  // Vditor 只设置 .vditor-ir 的 scrollTop，而真正的滚动容器是内部的 .vditor-reset
+  const scroller = editorEl.value?.querySelector<HTMLElement>(
+    ".vditor-ir .vditor-reset",
+  );
+  if (!heading || !scroller) {
+    return;
+  }
+  const delta =
+    heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  scroller.scrollTo({ top: scroller.scrollTop + delta, behavior: "smooth" });
+}
+
 function onOutlineClick(event: MouseEvent) {
   const item = (event.target as HTMLElement).closest?.("[data-target-id]");
   const id = item?.getAttribute("data-target-id");
   if (!id) {
     return;
   }
-  const heading = document.getElementById(id);
-  const scroller = editorEl.value?.querySelector<HTMLElement>(".vditor-ir .vditor-reset");
-  if (!heading || !scroller) {
-    return;
-  }
   event.preventDefault();
   event.stopPropagation();
-  const delta =
-    heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-  scroller.scrollTo({ top: scroller.scrollTop + delta, behavior: "smooth" });
+  scrollToHeading(id);
+}
+
+function setOutlineHidden(hidden: boolean) {
+  outlineHidden.value = hidden;
+  if (hidden) {
+    hideFlyout();
+  }
+}
+
+function showFlyout() {
+  window.clearTimeout(flyoutTimer);
+  outlineFlyout.value = true;
+}
+
+function hideFlyout() {
+  window.clearTimeout(flyoutTimer);
+  flyoutTimer = window.setTimeout(() => {
+    outlineFlyout.value = false;
+  }, 160);
+}
+
+function jump(index: number) {
+  const heading = headings.value[index];
+  if (heading) {
+    scrollToHeading(heading.id);
+  }
 }
 
 function flushContent() {
@@ -205,7 +285,7 @@ onMounted(() => {
       ready.value = true;
       const instance = vditor.value;
       if (instance) {
-        instance.vditor.outline.toggle(instance.vditor, true, false);
+        syncOutline();
         instance.vditor.outline.element.addEventListener(
           "click",
           onOutlineClick,
@@ -230,6 +310,11 @@ onMounted(() => {
   });
 });
 
+watch(outlineHidden, (hidden) => {
+  localStorage.setItem(OUTLINE_KEY, hidden ? "1" : "0");
+  applyOutline();
+});
+
 watch(
   () => props.raw,
   (value) => {
@@ -239,12 +324,14 @@ watch(
     const next = value ?? "";
     if (next !== vditor.value.getValue()) {
       vditor.value.setValue(next, true);
+      syncOutline();
     }
   },
 );
 
 onBeforeUnmount(() => {
   window.clearTimeout(contentTimer);
+  window.clearTimeout(flyoutTimer);
   window.removeEventListener("keydown", onWindowKeydown, true);
   themeObserver?.disconnect();
   vditor.value?.destroy();
@@ -265,7 +352,58 @@ onBeforeUnmount(() => {
         @keydown="onTitleKeydown"
       />
     </div>
-    <div ref="editorEl" class="wb-md__editor"></div>
+    <div class="wb-md__body">
+      <div ref="editorEl" class="wb-md__editor"></div>
+
+      <template v-if="outlineAvailable">
+        <button
+          v-if="!outlineHidden && panelOpen"
+          class="wb-outline-arrow"
+          title="折叠大纲"
+          aria-label="折叠大纲"
+          @click="setOutlineHidden(true)"
+        >
+          ›
+        </button>
+
+        <div
+          v-else
+          class="wb-outline-rail"
+          @mouseenter="showFlyout"
+          @mouseleave="hideFlyout"
+        >
+          <button
+            class="wb-outline-rail__expand"
+            title="展开大纲"
+            aria-label="展开大纲"
+            @click="setOutlineHidden(false)"
+          >
+            ‹
+          </button>
+          <button
+            v-for="(heading, index) in headings.slice(0, 14)"
+            :key="`dash-${index}`"
+            class="wb-outline-dash"
+            :class="`is-h${heading.level}`"
+            :title="heading.text"
+            @click="jump(index)"
+          ></button>
+
+          <div v-if="outlineFlyout" class="wb-outline-flyout">
+            <div class="wb-outline-flyout__head">大纲</div>
+            <button
+              v-for="(heading, index) in headings"
+              :key="`item-${index}`"
+              class="wb-outline-flyout__item"
+              :class="`is-h${heading.level}`"
+              @click="jump(index)"
+            >
+              {{ heading.text }}
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -302,9 +440,19 @@ onBeforeUnmount(() => {
   color: #d1d5db;
 }
 
-.wb-md__editor {
+.wb-md__body {
+  position: relative;
   flex: 1;
   min-height: 0;
+}
+
+.wb-md__editor {
+  height: 100%;
+}
+
+/* 大纲面板宽 250px，折叠按钮压在它的左边缘上 */
+.wb-md__body > .wb-outline-arrow {
+  right: 242px;
 }
 
 .wb-md__editor :deep(.vditor) {
@@ -323,6 +471,16 @@ onBeforeUnmount(() => {
 :global(html.dark .wb-md),
 :global(html[data-theme="dark"] .wb-md),
 :global(body.dark .wb-md) {
+  /* 折叠轨道、悬浮大纲都沿用这些变量，深色下跟随编辑器配色 */
+  --wb-accent: #58a6ff;
+  --wb-text: #e5e7eb;
+  --wb-muted: #8b949e;
+  --wb-faint: #8b949e;
+  --wb-border: #30363d;
+  --wb-border-strong: #4b535d;
+  --wb-bg: #1c2128;
+  --wb-panel: #2d333b;
+  --wb-hover: #373e47;
   background: #24292e;
 }
 
