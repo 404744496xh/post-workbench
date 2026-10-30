@@ -6,3 +6,4 @@ workplace/
 ui/node_modules/
 ui/build/
 ui/dist/
+ui/public/vditor/

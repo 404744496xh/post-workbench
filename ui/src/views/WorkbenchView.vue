@@ -5,6 +5,8 @@ import {
   IconArrowRight,
   IconArrowUpCircleLine,
   IconBookRead,
+  IconCharacterRecognition,
+  IconCodeBoxLine,
   IconDeleteBin,
   IconExternalLinkLine,
   IconEye,
@@ -34,6 +36,8 @@ import CategoryPicker from "../components/CategoryPicker.vue";
 import ContextMenu from "../components/ContextMenu.vue";
 import EditorPane from "../components/EditorPane.vue";
 import TreePanel from "../components/TreePanel.vue";
+import { isMarkdownPost, switchPostEditor } from "../editorSwitch";
+import type { PostEditorTarget } from "../editorMeta";
 import type { CatNode } from "../composables/useContent";
 import { postPhase, useContent } from "../composables/useContent";
 import type { MenuItem, MenuTarget } from "../types";
@@ -155,6 +159,8 @@ const icons = {
   settings: markRaw(IconSettings),
   delete: markRaw(IconDeleteBin),
   create: markRaw(IconRiPencilFill),
+  markdown: markRaw(IconCodeBoxLine),
+  rich: markRaw(IconCharacterRecognition),
 };
 
 const menuItems = computed<MenuItem[]>(() => {
@@ -183,6 +189,9 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: icons.pin,
     },
     { id: "move", label: "移动到分类…", icon: icons.folder },
+    isMarkdownPost(post)
+      ? { id: "toggle-editor", label: "切换到富文本编辑器", icon: icons.rich }
+      : { id: "toggle-editor", label: "用 Markdown 编辑", icon: icons.markdown },
     { id: "settings", label: "打开设置", icon: icons.settings, divided: true },
     {
       id: "delete",
@@ -325,6 +334,36 @@ async function openSettings(name: string) {
   }
 }
 
+function confirmSwitchEditor(post: ListedPost) {
+  const name = post.post.metadata.name;
+  const target: PostEditorTarget = isMarkdownPost(post) ? "html" : "markdown";
+  const label = target === "markdown" ? "Markdown" : "富文本";
+  Dialog.warning({
+    title: `切换到${label}编辑器？`,
+    description:
+      target === "markdown"
+        ? "文章内容会转换为 Markdown 源码，颜色、对齐、画廊排版等富文本样式可能丢失。"
+        : "文章内容会转换为 HTML 富文本，Markdown 源码将不再保留。",
+    confirmText: "切换",
+    onConfirm: async () => {
+      try {
+        if (selectedName.value === name) {
+          await editorRef.value?.clickHeaderButton(["保存", "Save"]);
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+        }
+        await switchPostEditor(post, target);
+        Toast.success(`已切换为${label}编辑器`);
+        await refreshSilently();
+        if (selectedName.value === name) {
+          await editorRef.value?.reloadCurrent();
+        }
+      } catch (e) {
+        Toast.error(e instanceof Error ? e.message : "切换编辑器失败");
+      }
+    },
+  });
+}
+
 async function handleMenuSelect(id: string) {
   const target = menuTarget.value;
   if (!target) {
@@ -370,6 +409,9 @@ async function handleMenuSelect(id: string) {
       break;
     case "move":
       openMoveDialog(post);
+      break;
+    case "toggle-editor":
+      confirmSwitchEditor(post);
       break;
     case "settings":
       await openSettings(name);

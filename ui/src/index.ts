@@ -2,11 +2,24 @@ import { IconRiPencilFill } from "@halo-dev/components";
 import { definePlugin } from "@halo-dev/ui-shared";
 import { defineAsyncComponent, markRaw } from "vue";
 import { setupPostsOverride } from "./bootstrap";
+import { MARKDOWN_EDITOR_NAME } from "./editorMeta";
 import "./styles/workbench.css";
 
 setupPostsOverride();
 
 export default definePlugin({
+  extensionPoints: {
+    "editor:create": () => [
+      {
+        name: MARKDOWN_EDITOR_NAME,
+        displayName: "Markdown",
+        component: markRaw(
+          defineAsyncComponent(() => import("./components/MarkdownEditor.vue")),
+        ),
+        rawType: "markdown",
+      },
+    ],
+  },
   routes: [
     {
       parentName: "Root",

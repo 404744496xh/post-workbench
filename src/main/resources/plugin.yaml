@@ -11,7 +11,7 @@ spec:
   homepage: https://www.xiahan.asia
   logo: logo.png
   displayName: "写作台"
-  description: "笔记软件式的文章工作台：多级分类树 + 内嵌原生编辑器"
+  description: "笔记软件式的文章工作台：多级分类树 + 内嵌原生编辑器，支持 Typora 风格 Markdown 写作"
   license:
     - name: "MIT"
   settingName: post-workbench-settings

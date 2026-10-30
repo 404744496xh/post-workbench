@@ -3,17 +3,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "node scripts/copy-vditor.mjs && vite build"
   },
   "dependencies": {
     "@halo-dev/api-client": "2.26.0",
     "@halo-dev/components": "2.26.0",
     "@halo-dev/ui-shared": "2.26.0",
+    "marked": "^18.1.2",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "vditor": "^4.0.1",
     "vue": "3.5.41",
     "vue-router": "5.1.0"
   },
   "devDependencies": {
     "@halo-dev/ui-plugin-bundler-kit": "2.26.0",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-vue": "6.0.10",
     "vite": "7.1.0"
   }
