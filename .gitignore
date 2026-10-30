@@ -1,0 +1,8 @@
+.gradle/
+build/
+workplace/
+.idea/
+*.iml
+ui/node_modules/
+ui/build/
+ui/dist/

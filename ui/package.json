@@ -1,0 +1,20 @@
+{
+  "name": "post-workbench-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@halo-dev/api-client": "2.26.0",
+    "@halo-dev/components": "2.26.0",
+    "@halo-dev/ui-shared": "2.26.0",
+    "vue": "3.5.41",
+    "vue-router": "5.1.0"
+  },
+  "devDependencies": {
+    "@halo-dev/ui-plugin-bundler-kit": "2.26.0",
+    "@vitejs/plugin-vue": "6.0.10",
+    "vite": "7.1.0"
+  }
+}

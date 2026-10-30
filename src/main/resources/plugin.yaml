@@ -1,0 +1,15 @@
+apiVersion: plugin.halo.run/v1alpha1
+kind: Plugin
+metadata:
+  name: post-workbench
+spec:
+  enabled: true
+  requires: ">=2.26.0"
+  author:
+    name: xiahan
+    website: https://www.xiahan.asia
+  homepage: https://www.xiahan.asia
+  displayName: "写作台"
+  description: "笔记软件式的文章工作台：多级分类树 + 内嵌原生编辑器"
+  license:
+    - name: "MIT"
