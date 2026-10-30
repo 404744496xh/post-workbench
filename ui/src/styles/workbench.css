@@ -985,3 +985,133 @@ body.wb-console-hidden .layout > .main-content {
   color: var(--wb-text);
   background: var(--wb-hover);
 }
+
+.wb-outline-rail {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 18px;
+  padding: 6px 0;
+  background: var(--wb-panel);
+  border: 1px solid var(--wb-border);
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
+  transform: translateY(-50%);
+}
+
+.wb-outline-rail__expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--wb-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.wb-outline-rail__expand:hover {
+  color: var(--wb-text);
+  background: var(--wb-hover);
+}
+
+.wb-outline-dash {
+  width: 8px;
+  height: 2px;
+  padding: 0;
+  background: var(--wb-border-strong);
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: width 0.15s, background 0.15s;
+}
+
+.wb-outline-dash.is-h1 {
+  width: 12px;
+}
+
+.wb-outline-dash.is-h3 {
+  width: 6px;
+}
+
+.wb-outline-dash.is-h4 {
+  width: 4px;
+}
+
+.wb-outline-dash:hover {
+  width: 12px;
+  background: var(--wb-accent);
+}
+
+.wb-outline-flyout {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  width: 240px;
+  max-height: 60vh;
+  padding: 8px;
+  overflow: auto;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 0.16);
+  transform: translateY(-50%);
+}
+
+.wb-outline-flyout__head {
+  padding: 2px 8px 6px;
+  font-size: 12px;
+  color: var(--wb-faint);
+}
+
+.wb-outline-flyout__item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  overflow: hidden;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--wb-text);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.wb-outline-flyout__item.is-h2 {
+  padding-left: 16px;
+}
+
+.wb-outline-flyout__item.is-h3 {
+  padding-left: 26px;
+  color: var(--wb-muted);
+}
+
+.wb-outline-flyout__item.is-h4 {
+  padding-left: 36px;
+  color: var(--wb-muted);
+}
+
+.wb-outline-flyout__item:hover {
+  background: var(--wb-hover);
+}
+
+.wb-outline-flyout__empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--wb-faint);
+}

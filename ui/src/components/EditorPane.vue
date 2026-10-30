@@ -24,6 +24,7 @@ const FRAME_CSS = `
 .main-content__footer { display: none !important; }
 .mobile-nav { display: none !important; }
 html.wb-outline-hidden .editor-entry-extra { display: none !important; }
+html.wb-outline-hidden .editor-entry { padding-right: 18px; }
 `;
 
 const iframeEl = ref<HTMLIFrameElement>();
@@ -32,10 +33,35 @@ const frameReady = ref(false);
 const frameVisible = ref(false);
 const outlineAvailable = ref(false);
 const outlineHidden = ref(localStorage.getItem("post-workbench:outline-hidden") === "1");
+const outlinePanelWidth = ref(288);
+const outlineHeadings = ref<{ level: number; text: string }[]>([]);
+const outlineFlyout = ref(false);
 const src = ref<string>();
 const loading = ref(false);
 
 let outlineTimer: number | undefined;
+let flyoutTimer: number | undefined;
+
+function refreshOutline(win?: Window) {
+  const doc = (win ?? iframeEl.value?.contentWindow)?.document;
+  if (!doc) {
+    return;
+  }
+  const panel = doc.querySelector(".editor-entry-extra");
+  outlineAvailable.value = !!panel;
+  const width = panel?.getBoundingClientRect().width;
+  if (width) {
+    outlinePanelWidth.value = Math.round(width);
+  }
+  outlineHeadings.value = Array.from(
+    doc.querySelectorAll(".editor-main h1, .editor-main h2, .editor-main h3, .editor-main h4"),
+  )
+    .map((el) => ({
+      level: Number(el.tagName.slice(1)),
+      text: (el.textContent ?? "").trim(),
+    }))
+    .filter((heading) => heading.text);
+}
 
 function applyOutlineState() {
   const doc = iframeEl.value?.contentWindow?.document;
@@ -50,6 +76,7 @@ function watchOutline(win: Window) {
     outlineAvailable.value = exists;
     if (exists) {
       applyOutlineState();
+      refreshOutline(win);
       window.clearInterval(outlineTimer);
       return;
     }
@@ -57,6 +84,28 @@ function watchOutline(win: Window) {
       window.clearInterval(outlineTimer);
     }
   }, 200);
+}
+
+function showOutlineFlyout() {
+  window.clearTimeout(flyoutTimer);
+  refreshOutline();
+  outlineFlyout.value = true;
+}
+
+function hideOutlineFlyout() {
+  window.clearTimeout(flyoutTimer);
+  flyoutTimer = window.setTimeout(() => {
+    outlineFlyout.value = false;
+  }, 160);
+}
+
+function jumpToHeading(index: number) {
+  const doc = iframeEl.value?.contentWindow?.document;
+  const target = doc?.querySelectorAll(
+    ".editor-main h1, .editor-main h2, .editor-main h3, .editor-main h4",
+  )[index] as HTMLElement | undefined;
+  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  outlineFlyout.value = false;
 }
 
 watch(outlineHidden, (value) => {
@@ -300,15 +349,51 @@ defineExpose({ reloadCurrent, clickHeaderButton });
       ></iframe>
     </div>
 
-    <button
-      v-if="mode !== 'idle' && frameReady && !loading && outlineAvailable"
-      class="wb-outline-arrow"
-      :title="outlineHidden ? '展开大纲' : '折叠大纲'"
-      :aria-label="outlineHidden ? '展开大纲' : '折叠大纲'"
-      @click="outlineHidden = !outlineHidden"
-    >
-      {{ outlineHidden ? "‹" : "›" }}
-    </button>
+    <template v-if="mode !== 'idle' && frameReady && !loading && outlineAvailable">
+      <button
+        v-if="!outlineHidden"
+        class="wb-outline-arrow"
+        :style="{ right: `${outlinePanelWidth - 8}px` }"
+        title="折叠大纲"
+        aria-label="折叠大纲"
+        @click="outlineHidden = true"
+      >
+        ›
+      </button>
+
+      <div
+        v-else
+        class="wb-outline-rail"
+        @mouseenter="showOutlineFlyout"
+        @mouseleave="hideOutlineFlyout"
+      >
+        <button class="wb-outline-rail__expand" title="展开大纲" aria-label="展开大纲" @click="outlineHidden = false">
+          ‹
+        </button>
+        <button
+          v-for="(heading, index) in outlineHeadings.slice(0, 14)"
+          :key="`dash-${index}`"
+          class="wb-outline-dash"
+          :class="`is-h${heading.level}`"
+          :title="heading.text"
+          @click="jumpToHeading(index)"
+        ></button>
+
+        <div v-if="outlineFlyout" class="wb-outline-flyout">
+          <div class="wb-outline-flyout__head">大纲</div>
+          <button
+            v-for="(heading, index) in outlineHeadings"
+            :key="`item-${index}`"
+            class="wb-outline-flyout__item"
+            :class="`is-h${heading.level}`"
+            @click="jumpToHeading(index)"
+          >
+            {{ heading.text }}
+          </button>
+          <div v-if="!outlineHeadings.length" class="wb-outline-flyout__empty">暂无标题</div>
+        </div>
+      </div>
+    </template>
 
     <div v-if="loading" class="wb-editor__loading">
       <span class="wb-spinner"></span>
