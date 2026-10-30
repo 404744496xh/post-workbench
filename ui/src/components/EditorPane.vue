@@ -23,14 +23,46 @@ const FRAME_CSS = `
 .layout > .main-content { width: 100% !important; margin-left: 0 !important; padding-bottom: 0 !important; }
 .main-content__footer { display: none !important; }
 .mobile-nav { display: none !important; }
+html.wb-outline-hidden .editor-entry-extra { display: none !important; }
 `;
 
 const iframeEl = ref<HTMLIFrameElement>();
 const frameMounted = ref(false);
 const frameReady = ref(false);
 const frameVisible = ref(false);
+const outlineAvailable = ref(false);
+const outlineHidden = ref(localStorage.getItem("post-workbench:outline-hidden") === "1");
 const src = ref<string>();
 const loading = ref(false);
+
+let outlineTimer: number | undefined;
+
+function applyOutlineState() {
+  const doc = iframeEl.value?.contentWindow?.document;
+  doc?.documentElement.classList.toggle("wb-outline-hidden", outlineHidden.value);
+}
+
+function watchOutline(win: Window) {
+  window.clearInterval(outlineTimer);
+  const started = Date.now();
+  outlineTimer = window.setInterval(() => {
+    const exists = !!win.document.querySelector(".editor-entry-extra");
+    outlineAvailable.value = exists;
+    if (exists) {
+      applyOutlineState();
+      window.clearInterval(outlineTimer);
+      return;
+    }
+    if (Date.now() - started > 5000) {
+      window.clearInterval(outlineTimer);
+    }
+  }, 200);
+}
+
+watch(outlineHidden, (value) => {
+  localStorage.setItem("post-workbench:outline-hidden", value ? "1" : "0");
+  applyOutlineState();
+});
 
 let suppressUntil = 0;
 let navToken = 0;
@@ -139,6 +171,9 @@ function onLoad() {
     frameReady.value = true;
     frameVisible.value = true;
     loading.value = false;
+    outlineAvailable.value = !!win.document.querySelector(".editor-entry-extra");
+    applyOutlineState();
+    watchOutline(win);
     suppressUntil = Date.now() + 300;
     emit("ready");
   }, 100);
@@ -189,6 +224,9 @@ async function navigateTo(targetAppPath: string, force = false) {
     if (!ok) {
       fallback = true;
       win.location.href = `/console${targetAppPath}`;
+    } else {
+      applyOutlineState();
+      watchOutline(win);
     }
   } catch {
     fallback = true;
@@ -245,6 +283,7 @@ async function clickHeaderButton(keywords: string[]) {
 
 onBeforeUnmount(() => {
   window.clearInterval(readyTimer);
+  window.clearInterval(outlineTimer);
 });
 
 defineExpose({ reloadCurrent, clickHeaderButton });
@@ -260,6 +299,16 @@ defineExpose({ reloadCurrent, clickHeaderButton });
         @load="onLoad"
       ></iframe>
     </div>
+
+    <button
+      v-if="mode !== 'idle' && frameReady && !loading && outlineAvailable"
+      class="wb-outline-arrow"
+      :title="outlineHidden ? '展开大纲' : '折叠大纲'"
+      :aria-label="outlineHidden ? '展开大纲' : '折叠大纲'"
+      @click="outlineHidden = !outlineHidden"
+    >
+      {{ outlineHidden ? "‹" : "›" }}
+    </button>
 
     <div v-if="loading" class="wb-editor__loading">
       <span class="wb-spinner"></span>
