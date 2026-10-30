@@ -6,7 +6,6 @@ import {
   IconClose,
   IconExternalLinkLine,
   IconFolder,
-  IconGrid,
   IconRefreshLine,
   IconSearch,
 } from "@halo-dev/components";
@@ -35,7 +34,6 @@ const props = defineProps<{
   loading: boolean;
   error: string;
   selectedName?: string;
-  consoleHidden: boolean;
   overridePosts: boolean;
 }>();
 
@@ -55,7 +53,6 @@ const emit = defineEmits<{
   (e: "update:statusFilter", value: StatusFilter): void;
   (e: "refresh"): void;
   (e: "collapse"): void;
-  (e: "toggle-console"): void;
   (e: "open-native"): void;
   (e: "move-post", payload: { name: string; category: string | null; label: string }): void;
 }>();
@@ -506,14 +503,6 @@ onBeforeUnmount(() => {
         <button class="wb-new-btn" @click="emit('create')">＋ 新建</button>
         <button class="wb-icon-btn" title="刷新" @click="emit('refresh')">
           <IconRefreshLine />
-        </button>
-        <button
-          class="wb-icon-btn"
-          :class="{ 'is-active': consoleHidden }"
-          :title="consoleHidden ? '显示控制台导航' : '隐藏控制台导航'"
-          @click="emit('toggle-console')"
-        >
-          <IconGrid />
         </button>
         <button v-if="overridePosts" class="wb-icon-btn" title="打开原文章视图" @click="emit('open-native')">
           <IconExternalLinkLine />

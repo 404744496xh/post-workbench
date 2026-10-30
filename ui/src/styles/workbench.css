@@ -130,11 +130,6 @@ body.wb-console-hidden .layout > .main-content {
   background: var(--wb-hover);
 }
 
-.wb-icon-btn.is-active {
-  color: var(--wb-accent);
-  background: var(--wb-accent-soft);
-}
-
 .wb-icon-btn svg {
   width: 15px;
   height: 15px;
@@ -266,7 +261,7 @@ body.wb-console-hidden .layout > .main-content {
 }
 
 .wb-row.is-dragging {
-  opacity: 0.45;
+  opacity: 0.55;
 }
 
 .wb-row.is-drop-hint {
@@ -898,4 +893,64 @@ body.wb-console-hidden .layout > .main-content {
 .wb-native-pill:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 24px rgb(37 99 235 / 0.42);
+}
+
+.wb-sidebar-arrow {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 52px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--wb-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  opacity: 0.55;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.wb-sidebar-arrow:hover {
+  opacity: 1;
+  color: var(--wb-text);
+  background: var(--wb-hover);
+}
+
+.wb-edge-arrow {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  z-index: 1999;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 56px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--wb-faint);
+  background: var(--wb-panel);
+  border: 1px solid var(--wb-border);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  opacity: 0.55;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.wb-edge-arrow:hover {
+  opacity: 1;
+  color: var(--wb-text);
+  background: var(--wb-hover);
 }

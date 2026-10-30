@@ -9,7 +9,6 @@ import {
   IconExternalLinkLine,
   IconEye,
   IconFolder,
-  IconGrid,
   IconLink,
   IconRiPencilFill,
   IconSendPlaneFill,
@@ -21,7 +20,9 @@ import {
   computed,
   markRaw,
   nextTick,
+  onActivated,
   onBeforeUnmount,
+  onDeactivated,
   onMounted,
   ref,
   watch,
@@ -394,6 +395,47 @@ watch(consoleHidden, (value) => {
   applyConsoleHidden();
 });
 
+const viewActive = ref(true);
+
+onActivated(() => {
+  viewActive.value = true;
+  applyConsoleHidden();
+  mountSidebarArrow();
+});
+
+onDeactivated(() => {
+  viewActive.value = false;
+  unmountSidebarArrow();
+  document.body.classList.remove("wb-console-hidden");
+});
+
+let sidebarArrow: HTMLButtonElement | undefined;
+
+function mountSidebarArrow() {
+  if (sidebarArrow) {
+    return;
+  }
+  const sidebar = document.querySelector(".layout > aside.sidebar");
+  if (!sidebar) {
+    return;
+  }
+  sidebarArrow = document.createElement("button");
+  sidebarArrow.type = "button";
+  sidebarArrow.className = "wb-sidebar-arrow";
+  sidebarArrow.title = "收起导航";
+  sidebarArrow.setAttribute("aria-label", "收起导航");
+  sidebarArrow.textContent = "‹";
+  sidebarArrow.addEventListener("click", () => {
+    consoleHidden.value = true;
+  });
+  sidebar.appendChild(sidebarArrow);
+}
+
+function unmountSidebarArrow() {
+  sidebarArrow?.remove();
+  sidebarArrow = undefined;
+}
+
 function toggleTree(collapsed: boolean) {
   treeCollapsed.value = collapsed;
 }
@@ -439,6 +481,7 @@ function onWindowFocus() {
 
 onMounted(() => {
   applyConsoleHidden();
+  mountSidebarArrow();
   void isOverridePostsEnabled().then((value) => {
     overridePosts.value = value;
   });
@@ -466,6 +509,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onGlobalKeydown);
   window.clearInterval(pollTimer);
   resizeObserver?.disconnect();
+  unmountSidebarArrow();
   document.body.classList.remove("wb-console-hidden");
 });
 </script>
@@ -483,7 +527,6 @@ onBeforeUnmount(() => {
       :loading="loading"
       :error="error"
       :selected-name="selectedName"
-      :console-hidden="consoleHidden"
       :override-posts="overridePosts"
       @select="selectPost"
       @create="createPost"
@@ -491,7 +534,6 @@ onBeforeUnmount(() => {
       @update:status-filter="statusFilter = $event"
       @refresh="refreshSilently"
       @collapse="toggleTree(true)"
-      @toggle-console="consoleHidden = !consoleHidden"
       @open-native="openNativePosts"
       @move-post="movePostToCategory($event.name, $event.category, $event.label)"
     />
@@ -506,14 +548,6 @@ onBeforeUnmount(() => {
     <div v-else class="wb-rail">
       <button class="wb-rail__btn" title="展开分类栏" @click="toggleTree(false)">
         <IconArrowRight />
-      </button>
-      <button
-        v-if="consoleHidden"
-        class="wb-rail__btn"
-        title="显示控制台导航"
-        @click="consoleHidden = false"
-      >
-        <IconGrid />
       </button>
     </div>
 
@@ -544,5 +578,17 @@ onBeforeUnmount(() => {
       @close="moveDialog = { open: false, post: undefined }"
       @confirm="confirmMove"
     />
+
+    <Teleport to="body">
+      <button
+        v-if="consoleHidden && viewActive"
+        class="wb-edge-arrow"
+        title="显示导航"
+        aria-label="显示导航"
+        @click="consoleHidden = false"
+      >
+        ›
+      </button>
+    </Teleport>
   </div>
 </template>
