@@ -17,7 +17,11 @@ export async function isOverridePostsEnabled(force = false): Promise<boolean> {
 }
 
 export function bypassNativePosts() {
-  sessionStorage.setItem(BYPASS_KEY, "1");
+  localStorage.setItem(BYPASS_KEY, "1");
+}
+
+function useNativePosts() {
+  return localStorage.getItem(BYPASS_KEY) === "1";
 }
 
 function getRouter(): any {
@@ -47,7 +51,7 @@ function syncPill(router: any, show: boolean) {
   pill.textContent = "写作台视图";
   pill.title = "回到写作台";
   pill.addEventListener("click", () => {
-    sessionStorage.removeItem(BYPASS_KEY);
+    localStorage.removeItem(BYPASS_KEY);
     void router.push("/workbench");
   });
   document.body.appendChild(pill);
@@ -70,32 +74,28 @@ export function setupPostsOverride() {
       if (!(await isOverridePostsEnabled())) {
         return true;
       }
-      if (sessionStorage.getItem(BYPASS_KEY) === "1") {
+      if (useNativePosts()) {
         return true;
       }
       return { path: "/workbench" };
     });
-    router.afterEach(async (to: any) => {
+    const syncChrome = async (path: string) => {
       const enabled = await isOverridePostsEnabled();
       syncWorkbenchMenu(enabled);
-      if (to.path !== "/posts") {
-        sessionStorage.removeItem(BYPASS_KEY);
-        syncPill(router, false);
-        return;
+      if (path === "/workbench") {
+        // 真正回到写作台，视为改回写作台视图
+        localStorage.removeItem(BYPASS_KEY);
       }
-      syncPill(router, enabled);
-    });
+      syncPill(router, path === "/posts" && enabled);
+    };
+    router.afterEach((to: any) => void syncChrome(to.path));
     void (async () => {
       await router.isReady?.();
-      const enabled = await isOverridePostsEnabled(true);
-      syncWorkbenchMenu(enabled);
-      if (!enabled) {
-        return;
-      }
-      const current = router.currentRoute.value;
-      if (current.path === "/posts" && sessionStorage.getItem(BYPASS_KEY) !== "1") {
+      if ((await isOverridePostsEnabled(true)) && router.currentRoute.value.path === "/posts" && !useNativePosts()) {
         await router.replace("/workbench");
       }
+      // 冷启动的首次导航不会触发 afterEach，按最终路由补一次
+      await syncChrome(router.currentRoute.value.path);
     })();
   };
   install();
