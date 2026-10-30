@@ -53,11 +53,39 @@ function isDark() {
   );
 }
 
+function syncOutline() {
+  const instance = vditor.value;
+  if (!instance) {
+    return;
+  }
+  instance.vditor.outline.render(instance.vditor);
+}
+
+// Vditor 只设置 .vditor-ir 的 scrollTop，而真正的滚动容器是内部的 .vditor-reset
+function onOutlineClick(event: MouseEvent) {
+  const item = (event.target as HTMLElement).closest?.("[data-target-id]");
+  const id = item?.getAttribute("data-target-id");
+  if (!id) {
+    return;
+  }
+  const heading = document.getElementById(id);
+  const scroller = editorEl.value?.querySelector<HTMLElement>(".vditor-ir .vditor-reset");
+  if (!heading || !scroller) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const delta =
+    heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  scroller.scrollTo({ top: scroller.scrollTop + delta, behavior: "smooth" });
+}
+
 function flushContent() {
   window.clearTimeout(contentTimer);
   if (!vditor.value) {
     return;
   }
+  syncOutline();
   emit("update:content", vditor.value.getHTML());
 }
 
@@ -67,6 +95,7 @@ function flushAll() {
     return;
   }
   const raw = vditor.value.getValue();
+  syncOutline();
   emit("update:raw", raw);
   emit("update", raw);
   emit("update:content", vditor.value.getHTML());
@@ -156,6 +185,7 @@ onMounted(() => {
     theme: dark ? "dark" : "classic",
     cache: { enable: false },
     toolbar: [],
+    outline: { enable: true, position: "right" },
     preview: {
       maxWidth: 800,
       theme: {
@@ -173,6 +203,17 @@ onMounted(() => {
     blur: flushAll,
     after: () => {
       ready.value = true;
+      const instance = vditor.value;
+      if (instance) {
+        instance.vditor.outline.toggle(instance.vditor, true, false);
+        instance.vditor.outline.element.addEventListener(
+          "click",
+          onOutlineClick,
+          true,
+        );
+        // 打开即回写渲染结果，避免站点端沿用与 Markdown 源码不一致的旧 HTML
+        emit("update:content", instance.getHTML());
+      }
       if (!props.title && !props.raw) {
         titleEl.value?.focus();
       } else {
