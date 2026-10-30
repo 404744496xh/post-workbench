@@ -13,6 +13,7 @@ export default definePlugin({
       {
         name: MARKDOWN_EDITOR_NAME,
         displayName: "Markdown",
+        logo: "/plugins/post-workbench/assets/ui/editor-markdown.svg",
         component: markRaw(
           defineAsyncComponent(() => import("./components/MarkdownEditor.vue")),
         ),
