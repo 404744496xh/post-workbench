@@ -161,13 +161,62 @@ function jump(index: number) {
   }
 }
 
+const HEADING_SELECTOR = "h1,h2,h3,h4,h5,h6";
+
+function headingKey(element: Element) {
+  return (element.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+// Vditor 渲染的标题不带 id，直接回写会抹掉 Halo 服务端生成的锚点，前台目录和 #permalink 一起失效。
+// 按标题文本把原有 id / tabindex 搬回来；同名标题用队列按出现顺序配对。
+function headingIdMap(html: string) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const map = new Map<string, { id: string; tabindex: string | null }[]>();
+  doc.body.querySelectorAll(HEADING_SELECTOR).forEach((element) => {
+    const id = element.getAttribute("id");
+    if (!id) {
+      return;
+    }
+    const key = headingKey(element);
+    const bucket = map.get(key) ?? [];
+    bucket.push({ id, tabindex: element.getAttribute("tabindex") });
+    map.set(key, bucket);
+  });
+  return map;
+}
+
+function withHeadingIds(html: string) {
+  if (!props.content) {
+    return html;
+  }
+  const map = headingIdMap(props.content);
+  if (map.size === 0) {
+    return html;
+  }
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.body.querySelectorAll(HEADING_SELECTOR).forEach((element) => {
+    if (element.getAttribute("id")) {
+      return;
+    }
+    const next = map.get(headingKey(element))?.shift();
+    if (!next) {
+      return;
+    }
+    element.setAttribute("id", next.id);
+    if (next.tabindex !== null) {
+      element.setAttribute("tabindex", next.tabindex);
+    }
+  });
+  return doc.body.innerHTML;
+}
+
 function flushContent() {
   window.clearTimeout(contentTimer);
   if (!vditor.value) {
     return;
   }
   syncOutline();
-  emit("update:content", vditor.value.getHTML());
+  emit("update:content", withHeadingIds(vditor.value.getHTML()));
 }
 
 function flushAll() {
@@ -179,7 +228,7 @@ function flushAll() {
   syncOutline();
   emit("update:raw", raw);
   emit("update", raw);
-  emit("update:content", vditor.value.getHTML());
+  emit("update:content", withHeadingIds(vditor.value.getHTML()));
 }
 
 // lute 在 IR 模式下只给 html-block 生成预览，行内的空元素（<img> 等）会被压成 0 尺寸
@@ -367,7 +416,7 @@ onMounted(() => {
           true,
         );
         // 打开即回写渲染结果，避免站点端沿用与 Markdown 源码不一致的旧 HTML
-        emit("update:content", instance.getHTML());
+        emit("update:content", withHeadingIds(instance.getHTML()));
       }
       if (!props.title && !props.raw) {
         titleEl.value?.focus();
