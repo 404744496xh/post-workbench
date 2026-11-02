@@ -52,6 +52,7 @@ const headings = ref<{ level: number; text: string; id: string }[]>([]);
 
 let contentTimer: number | undefined;
 let flyoutTimer: number | undefined;
+let inlineHtmlTimer: number | undefined;
 
 function isDark() {
   const root = document.documentElement;
@@ -181,7 +182,80 @@ function flushAll() {
   emit("update:content", vditor.value.getHTML());
 }
 
+// lute 在 IR 模式下只给 html-block 生成预览，行内的空元素（<img> 等）会被压成 0 尺寸
+// 的 marker，编辑器里什么都不显示。这里补一个 data-render 预览节点：lute 回读 Markdown
+// 时会整棵跳过带 data-render 的元素，因此不影响 getValue() 的源码。
+const INLINE_TAGS: Record<string, string[]> = {
+  img: ["src", "alt", "title", "width", "height", "loading"],
+  hr: [],
+  br: [],
+  wbr: [],
+};
+
+function isSafeUrl(value: string) {
+  const url = value.trim().toLowerCase();
+  if (url.startsWith("data:")) {
+    return url.startsWith("data:image/");
+  }
+  return !/^(javascript|vbscript|file):/.test(url);
+}
+
+function renderInlineHtml() {
+  const root = editorEl.value?.querySelector<HTMLElement>(".vditor-ir");
+  if (!root) {
+    return;
+  }
+  const selection = window.getSelection();
+  root
+    .querySelectorAll<HTMLElement>('[data-type="html-inline"]')
+    .forEach((node) => {
+      if (node.querySelector(".vditor-ir__preview")) {
+        return;
+      }
+      // 正在编辑的节点不插入，避免抢走光标
+      if (selection?.anchorNode && node.contains(selection.anchorNode)) {
+        return;
+      }
+      const source = node.querySelector("code")?.textContent?.trim() ?? "";
+      const matched = /^<([a-zA-Z][\w-]*)\b([^>]*)\/?>$/.exec(source);
+      if (!matched) {
+        return;
+      }
+      const tag = matched[1].toLowerCase();
+      const allowed = INLINE_TAGS[tag];
+      if (!allowed) {
+        return;
+      }
+      const element = document.createElement(tag);
+      const attrs = /([a-zA-Z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+      let attr: RegExpExecArray | null;
+      while ((attr = attrs.exec(matched[2]))) {
+        const name = attr[1].toLowerCase();
+        const value = attr[3] ?? attr[2] ?? "";
+        if (!allowed.includes(name)) {
+          continue;
+        }
+        if (name === "src" && !isSafeUrl(value)) {
+          return;
+        }
+        element.setAttribute(name, value);
+      }
+      const preview = document.createElement("span");
+      preview.className = "vditor-ir__preview";
+      preview.setAttribute("data-render", "1");
+      preview.setAttribute("contenteditable", "false");
+      preview.appendChild(element);
+      node.appendChild(preview);
+    });
+}
+
+function scheduleInlineHtml() {
+  window.clearTimeout(inlineHtmlTimer);
+  inlineHtmlTimer = window.setTimeout(renderInlineHtml, 0);
+}
+
 function onInput(value: string) {
+  scheduleInlineHtml();
   emit("update:raw", value);
   emit("update", value);
   window.clearTimeout(contentTimer);
@@ -286,6 +360,7 @@ onMounted(() => {
       const instance = vditor.value;
       if (instance) {
         syncOutline();
+        scheduleInlineHtml();
         instance.vditor.outline.element.addEventListener(
           "click",
           onOutlineClick,
@@ -325,6 +400,7 @@ watch(
     if (next !== vditor.value.getValue()) {
       vditor.value.setValue(next, true);
       syncOutline();
+      scheduleInlineHtml();
     }
   },
 );
@@ -332,6 +408,7 @@ watch(
 onBeforeUnmount(() => {
   window.clearTimeout(contentTimer);
   window.clearTimeout(flyoutTimer);
+  window.clearTimeout(inlineHtmlTimer);
   window.removeEventListener("keydown", onWindowKeydown, true);
   themeObserver?.disconnect();
   vditor.value?.destroy();
@@ -466,6 +543,16 @@ onBeforeUnmount(() => {
 
 .wb-md__editor :deep(.vditor-reset) {
   font-size: 16px;
+}
+
+/* 行内 HTML 补出来的预览：跟着文字走，不要撑出块级间距 */
+.wb-md__editor :deep(.vditor-ir span.vditor-ir__preview) {
+  min-height: 0;
+}
+
+.wb-md__editor :deep(.vditor-ir span.vditor-ir__preview img) {
+  max-width: 100%;
+  vertical-align: middle;
 }
 
 :global(html.dark .wb-md),
