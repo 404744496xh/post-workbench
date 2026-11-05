@@ -88,3 +88,35 @@ export async function patchPostField(name: string, path: string, value: unknown)
     throw new Error(`更新失败 (${response.status})`);
   }
 }
+
+export async function createCategory(
+  displayName: string,
+  slug: string,
+  parentName?: string,
+): Promise<string> {
+  const spec: Record<string, unknown> = { displayName, slug, priority: 0 };
+  if (parentName) {
+    spec.parent = parentName;
+  }
+  let response: Response;
+  try {
+    response = await fetch("/apis/content.halo.run/v1alpha1/categories", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        apiVersion: "content.halo.run/v1alpha1",
+        kind: "Category",
+        metadata: { generateName: "category-" },
+        spec,
+      }),
+    });
+  } catch {
+    throw new Error("创建分类失败（请求未送达服务端）");
+  }
+  if (!response.ok) {
+    throw new Error(`创建分类失败 (${response.status})`);
+  }
+  const created = (await response.json()) as { metadata?: { name?: string } };
+  return created.metadata?.name ?? "";
+}

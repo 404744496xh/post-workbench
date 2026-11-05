@@ -99,6 +99,21 @@ export function useContent() {
     filteredPosts.value.filter((item) => !item.post.spec.categories?.length),
   );
 
+  // 别名（slug）冲突检测用；走未裁剪的原始树，空分类的别名也要算进去
+  const categorySlugs = computed(() => {
+    const result: string[] = [];
+    const visit = (nodes: CategoryTreeNode[] | undefined) => {
+      for (const node of nodes ?? []) {
+        if (node.category.spec.slug) {
+          result.push(node.category.spec.slug);
+        }
+        visit(node.children);
+      }
+    };
+    visit(rawTree.value);
+    return result;
+  });
+
   const counts = computed(() => {
     const result = { all: allPosts.value.length, published: 0, draft: 0, scheduled: 0 };
     for (const item of allPosts.value) {
@@ -121,6 +136,7 @@ export function useContent() {
     statusFilter,
     filteredPosts,
     categoryTree,
+    categorySlugs,
     uncategorized,
     counts,
     refresh,

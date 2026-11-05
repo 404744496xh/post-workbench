@@ -30,8 +30,9 @@ import {
   watch,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { editorPath, patchPostField, publishPost, recyclePost, unpublishPost } from "../api";
+import { createCategory, editorPath, patchPostField, publishPost, recyclePost, unpublishPost } from "../api";
 import { bypassNativePosts, isOverridePostsEnabled } from "../bootstrap";
+import CategoryFormDialog from "../components/CategoryFormDialog.vue";
 import CategoryPicker from "../components/CategoryPicker.vue";
 import ContextMenu from "../components/ContextMenu.vue";
 import EditorPane from "../components/EditorPane.vue";
@@ -51,6 +52,7 @@ const {
   statusFilter,
   filteredPosts,
   categoryTree,
+  categorySlugs,
   uncategorized,
   counts,
   refresh,
@@ -169,7 +171,11 @@ const menuItems = computed<MenuItem[]>(() => {
     return [];
   }
   if (target.kind === "category") {
-    return [{ id: "new-post", label: "在此分类新建文章", icon: icons.create }];
+    return [
+      { id: "new-post", label: "在此分类新建文章", icon: icons.create },
+      { id: "new-child", label: "在其下新建子分类", icon: icons.folder, divided: true },
+      { id: "new-sibling", label: "在其上新建同级分类", icon: icons.folder },
+    ];
   }
   const post = target.post;
   const phase = postPhase(post.post);
@@ -325,6 +331,54 @@ async function confirmMove(names: string[]) {
   );
 }
 
+const catDialog = ref<{ open: boolean; mode: "child" | "sibling"; node?: CatNode }>({
+  open: false,
+  mode: "child",
+});
+
+function closeCatDialog() {
+  catDialog.value = { open: false, mode: "child" };
+}
+
+function categoryPath(name?: string) {
+  if (!name) {
+    return "";
+  }
+  const visit = (nodes: CatNode[], path: string[]): string | undefined => {
+    for (const node of nodes) {
+      const next = [...path, node.displayName];
+      if (node.name === name) {
+        return next.join(" / ");
+      }
+      const found = visit(node.children, next);
+      if (found) {
+        return found;
+      }
+    }
+    return undefined;
+  };
+  return visit(categoryTree.value, []) ?? "";
+}
+
+const catDialogParent = computed(() =>
+  catDialog.value.mode === "child" ? catDialog.value.node?.name : catDialog.value.node?.parent,
+);
+
+async function confirmCreateCategory(payload: { displayName: string; slug: string }) {
+  const parentName = catDialogParent.value;
+  closeCatDialog();
+  try {
+    const name = await createCategory(payload.displayName, payload.slug, parentName);
+    Toast.success(`已创建分类「${payload.displayName}」`);
+    await refreshSilently();
+    if (name) {
+      treeRef.value?.expandAncestors(name);
+    }
+  } catch (e) {
+    Toast.error(e instanceof Error ? e.message : "创建分类失败");
+  }
+}
+
 async function openSettings(name: string) {
   selectPost(name);
   await nextTick();
@@ -372,6 +426,8 @@ async function handleMenuSelect(id: string) {
   if (target.kind === "category") {
     if (id === "new-post") {
       createPost(target.node.name);
+    } else if (id === "new-child" || id === "new-sibling") {
+      catDialog.value = { open: true, mode: id === "new-child" ? "child" : "sibling", node: target.node };
     }
     return;
   }
@@ -626,6 +682,15 @@ onBeforeUnmount(() => {
       :selected="moveDialog.post?.post.spec.categories ?? []"
       @close="moveDialog = { open: false, post: undefined }"
       @confirm="confirmMove"
+    />
+
+    <CategoryFormDialog
+      :open="catDialog.open"
+      :title="catDialog.mode === 'child' ? '新建子分类' : '新建同级分类'"
+      :parent-label="categoryPath(catDialogParent)"
+      :taken-slugs="categorySlugs"
+      @close="closeCatDialog"
+      @confirm="confirmCreateCategory"
     />
 
     <Teleport to="body">

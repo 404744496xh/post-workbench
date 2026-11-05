@@ -771,6 +771,34 @@ body.wb-console-hidden .layout > .main-content {
   color: var(--wb-faint);
 }
 
+.wb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 14px;
+}
+
+.wb-field__label {
+  font-size: 12px;
+  color: var(--wb-faint);
+}
+
+.wb-field__input {
+  height: 32px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--wb-text);
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-border);
+  border-radius: 7px;
+  outline: none;
+}
+
+.wb-field__input:focus {
+  border-color: var(--wb-accent);
+}
+
 .wb-check-row {
   display: flex;
   gap: 6px;
@@ -867,6 +895,17 @@ body.wb-console-hidden .layout > .main-content {
 
 .wb-btn.is-primary:hover {
   background: #1d4ed8;
+}
+
+.wb-btn:disabled {
+  color: var(--wb-faint);
+  background: var(--wb-hover);
+  border-color: var(--wb-border);
+  cursor: not-allowed;
+}
+
+.wb-btn:disabled:hover {
+  background: var(--wb-hover);
 }
 
 .wb-native-pill {

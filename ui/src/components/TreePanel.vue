@@ -394,7 +394,7 @@ function focusSearch() {
   searchRef.value?.select();
 }
 
-defineExpose({ focusSearch });
+defineExpose({ focusSearch, expandAncestors });
 
 const hover = ref<{ post: ListedPost; top: number; left: number } | null>(null);
 let hoverTimer: number | undefined;
