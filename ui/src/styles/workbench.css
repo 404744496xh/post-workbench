@@ -273,6 +273,14 @@ body.wb-console-hidden .layout > .main-content {
   box-shadow: inset 0 0 0 1px var(--wb-accent);
 }
 
+.wb-row.is-drop-before {
+  box-shadow: inset 0 2px 0 0 var(--wb-accent);
+}
+
+.wb-row.is-drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--wb-accent);
+}
+
 .wb-caret {
   display: inline-flex;
   flex: none;

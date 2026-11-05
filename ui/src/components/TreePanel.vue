@@ -12,7 +12,7 @@ import {
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { POSTS_LIMIT } from "../api";
 import type { CatNode, StatusFilter } from "../composables/useContent";
-import { postPhase } from "../composables/useContent";
+import { findCategoryNode, postPhase } from "../composables/useContent";
 import { formatDateTime, relativeTime } from "../utils";
 
 interface Row {
@@ -56,6 +56,10 @@ const emit = defineEmits<{
   (e: "collapse"): void;
   (e: "open-native"): void;
   (e: "move-post", payload: { name: string; category: string | null; label: string }): void;
+  (
+    e: "move-category",
+    payload: { name: string; parent: string | null; index: number; message: string },
+  ): void;
 }>();
 
 const ALL_KEY = "__all__";
@@ -67,8 +71,6 @@ const searchInput = ref("");
 const search = ref("");
 const expanded = ref(new Set<string>());
 const activeId = ref<string>();
-const draggingName = ref<string>();
-const dropRowId = ref<string>();
 
 let searchTimer: number | undefined;
 watch(searchInput, (value) => {
@@ -115,64 +117,163 @@ function toggle(key: string) {
   expanded.value = next;
 }
 
+const draggingName = ref<string>();
+const dropRowId = ref<string>();
+const draggingCat = ref<string>();
+const blockedCats = ref<Set<string>>(new Set());
+const dropHint = ref<{ id: string; zone: "before" | "inside" | "after" }>();
+
+// 搜索态和状态筛选下，可见行的顺序不等于 priority 真实顺序，拖出来的位置会骗人
+const catDragEnabled = computed(() => !search.value.trim() && props.statusFilter === "all");
+
+function subtreeNames(node: CatNode, acc: Set<string> = new Set()): Set<string> {
+  acc.add(node.name);
+  for (const child of node.children) {
+    subtreeNames(child, acc);
+  }
+  return acc;
+}
+
 function canDropOn(row: Row) {
   return row.kind === "cat" || (row.kind === "special" && row.special === "uncategorized");
 }
 
+function acceptsCatDrop(row: Row) {
+  return row.kind === "cat" && !blockedCats.value.has(row.category!.name);
+}
+
+function dropAllowed(row: Row) {
+  return draggingCat.value ? acceptsCatDrop(row) : !!draggingName.value && canDropOn(row);
+}
+
 function onDragStart(event: DragEvent, row: Row) {
-  if (!row.post) {
-    return;
-  }
   if ((event.target as HTMLElement).closest(".wb-row__more")) {
     event.preventDefault();
     return;
   }
-  draggingName.value = row.post.post.metadata.name;
+  if (row.kind === "cat" && row.category) {
+    if (!catDragEnabled.value) {
+      event.preventDefault();
+      return;
+    }
+    draggingCat.value = row.category.name;
+    // Halo 不校验环，挂到自己子孙下会让整棵分支从树里消失，前端必须先拦住
+    blockedCats.value = subtreeNames(row.category);
+  } else if (row.post) {
+    draggingName.value = row.post.post.metadata.name;
+  } else {
+    event.preventDefault();
+    return;
+  }
   hideHover();
-  event.dataTransfer?.setData("text/plain", draggingName.value);
+  event.dataTransfer?.setData("text/plain", draggingCat.value ?? draggingName.value ?? "");
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
   }
 }
 
 function onDragOver(event: DragEvent, row: Row) {
-  if (!draggingName.value || !canDropOn(row)) {
+  if (!draggingName.value && !draggingCat.value) {
+    return;
+  }
+  if (!dropAllowed(row)) {
     return;
   }
   event.preventDefault();
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = "move";
   }
-  dropRowId.value = row.id;
+  if (!draggingCat.value) {
+    dropRowId.value = row.id;
+    return;
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const ratio = (event.clientY - rect.top) / rect.height;
+  dropHint.value = {
+    id: row.id,
+    zone: ratio < 0.3 ? "before" : ratio > 0.7 ? "after" : "inside",
+  };
 }
 
 function onDragLeave(row: Row) {
   if (dropRowId.value === row.id) {
     dropRowId.value = undefined;
   }
+  if (dropHint.value?.id === row.id) {
+    dropHint.value = undefined;
+  }
+}
+
+function dropZone(row: Row) {
+  return dropHint.value?.id === row.id ? dropHint.value.zone : undefined;
+}
+
+function siblingsOf(parent: string | null): CatNode[] {
+  return parent ? findCategoryNode(props.categoryTree, parent)?.children ?? [] : props.categoryTree;
+}
+
+/** 把「落在哪一行、哪个区」换算成「挂到谁下面、排第几」；index 以去掉被拖节点后的兄弟列表为准 */
+function resolveCatDrop(target: CatNode, zone: "before" | "inside" | "after") {
+  const name = draggingCat.value!;
+  let parent = target.parent ?? null;
+  let index = siblingsOf(parent).filter((node) => node.name !== name).findIndex((node) => node.name === target.name);
+  let message = `排到「${target.displayName}」前面`;
+  if (zone === "inside") {
+    parent = target.name;
+    index = siblingsOf(parent).filter((node) => node.name !== name).length;
+    message = `移到「${target.displayName}」下`;
+  } else if (zone === "after") {
+    if (target.children.length && isExpanded(`c:${target.name}`)) {
+      // 展开的父级下面紧挨着就是它的子级，「之后」这个位置在树上不存在，落成第一个子级
+      parent = target.name;
+      index = 0;
+      message = `移到「${target.displayName}」下`;
+    } else {
+      index += 1;
+      message = `排到「${target.displayName}」后面`;
+    }
+  }
+  if (index < 0) {
+    return undefined;
+  }
+  return { name, parent, index, message };
 }
 
 function onDrop(event: DragEvent, row: Row) {
-  const name = draggingName.value;
-  if (!name || !canDropOn(row)) {
+  if (!dropAllowed(row)) {
     return;
   }
   event.preventDefault();
-  emit("move-post", {
-    name,
-    category: row.kind === "cat" ? row.category!.name : null,
-    label: row.label,
-  });
-  if (!isExpanded(row.id)) {
-    toggle(row.id);
+  const catName = draggingCat.value;
+  const postName = draggingName.value;
+  if (catName && row.kind === "cat") {
+    const zone = dropZone(row) ?? "inside";
+    const payload = resolveCatDrop(row.category!, zone);
+    if (payload) {
+      emit("move-category", payload);
+      if (!isExpanded(row.id)) {
+        toggle(row.id);
+      }
+    }
+  } else if (postName) {
+    emit("move-post", {
+      name: postName,
+      category: row.kind === "cat" ? row.category!.name : null,
+      label: row.label,
+    });
+    if (!isExpanded(row.id)) {
+      toggle(row.id);
+    }
   }
-  draggingName.value = undefined;
-  dropRowId.value = undefined;
+  onDragEnd();
 }
 
 function onDragEnd() {
   draggingName.value = undefined;
   dropRowId.value = undefined;
+  draggingCat.value = undefined;
+  blockedCats.value = new Set();
+  dropHint.value = undefined;
 }
 
 const showUncategorized = computed(
@@ -279,21 +380,7 @@ watch(
 );
 
 function findCategory(categoryName?: string) {
-  if (!categoryName) {
-    return undefined;
-  }
-  let found: CatNode | undefined;
-  const visit = (nodes: CatNode[]) => {
-    for (const node of nodes) {
-      if (node.name === categoryName) {
-        found = node;
-        return;
-      }
-      visit(node.children);
-    }
-  };
-  visit(props.categoryTree);
-  return found;
+  return findCategoryNode(props.categoryTree, categoryName);
 }
 
 function expandAncestors(categoryName?: string) {
@@ -553,9 +640,11 @@ onBeforeUnmount(() => {
             'is-published': row.post && postPhase(row.post.post) === 'published',
             'is-draft': row.post && postPhase(row.post.post) === 'draft',
             'is-scheduled': row.post && postPhase(row.post.post) === 'scheduled',
-            'is-dragging': row.post && row.post.post.metadata.name === draggingName,
-            'is-drop-hint': !!draggingName && canDropOn(row),
-            'is-drop-target': dropRowId === row.id,
+            'is-dragging': row.post ? row.post.post.metadata.name === draggingName : row.category?.name === draggingCat,
+            'is-drop-hint': !draggingCat && dropAllowed(row),
+            'is-drop-target': dropRowId === row.id || dropZone(row) === 'inside',
+            'is-drop-before': dropZone(row) === 'before',
+            'is-drop-after': dropZone(row) === 'after',
           }"
           :data-row-id="row.id"
           :data-post-name="row.post?.post.metadata.name"
@@ -567,7 +656,7 @@ onBeforeUnmount(() => {
                 : undefined
           "
           :style="{ paddingLeft: `${6 + row.depth * 14}px` }"
-          :draggable="row.kind === 'post'"
+          :draggable="row.kind === 'post' || (row.kind === 'cat' && catDragEnabled)"
           @click="activateRow(row)"
           @mouseenter="onRowEnter($event, row)"
           @mouseleave="hideHover"

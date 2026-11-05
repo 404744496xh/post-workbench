@@ -77,15 +77,25 @@ export async function recyclePost(name: string) {
   await consoleApiClient.content.post.recyclePost({ name });
 }
 
-export async function patchPostField(name: string, path: string, value: unknown) {
-  // 草稿刚保存后 Halo 还会接着写 status/headSnapshot，读-改-写会撞 409，重试即可
+interface PatchOp {
+  path: string;
+  value?: unknown;
+}
+
+// 草稿刚保存后 Halo 还会接着写 status/headSnapshot，读-改-写会撞 409，重试即可
+async function patchResource(path: string, ops: PatchOp[]) {
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(`/apis/content.halo.run/v1alpha1/posts/${encodeURIComponent(name)}`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json-patch+json" },
-      body: JSON.stringify([{ op: "add", path, value }]),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/apis/content.halo.run/v1alpha1/${path}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json-patch+json" },
+        body: JSON.stringify(ops.map(({ path: opPath, value }) => ({ op: "add", path: opPath, value }))),
+      });
+    } catch {
+      throw new Error("更新失败（请求未送达服务端）");
+    }
     if (response.ok) {
       return;
     }
@@ -95,6 +105,22 @@ export async function patchPostField(name: string, path: string, value: unknown)
     }
     throw new Error(`更新失败 (${response.status})`);
   }
+}
+
+export async function patchPostField(name: string, path: string, value: unknown) {
+  await patchResource(`posts/${encodeURIComponent(name)}`, [{ path, value }]);
+}
+
+function patchCategory(name: string, ops: PatchOp[]) {
+  return patchResource(`categories/${encodeURIComponent(name)}`, ops);
+}
+
+/** 改分类的排序值与父级；parent 传 null 表示移到顶层，Halo 只认空串，不接受 null */
+export async function moveCategory(name: string, priority: number, parent: string | null) {
+  await patchCategory(name, [
+    { path: "/spec/priority", value: priority },
+    { path: "/spec/parent", value: parent ?? "" },
+  ]);
 }
 
 export async function createCategory(

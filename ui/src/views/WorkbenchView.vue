@@ -30,7 +30,7 @@ import {
   watch,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { createCategory, editorPath, patchPostField, publishPost, recyclePost, unpublishPost } from "../api";
+import { createCategory, editorPath, moveCategory, patchPostField, publishPost, recyclePost, unpublishPost } from "../api";
 import { bypassNativePosts, isOverridePostsEnabled } from "../bootstrap";
 import CategoryFormDialog from "../components/CategoryFormDialog.vue";
 import CategoryPicker from "../components/CategoryPicker.vue";
@@ -40,7 +40,7 @@ import TreePanel from "../components/TreePanel.vue";
 import { isMarkdownPost, switchPostEditor } from "../editorSwitch";
 import type { PostEditorTarget } from "../editorMeta";
 import type { CatNode } from "../composables/useContent";
-import { postPhase, useContent } from "../composables/useContent";
+import { findCategoryNode, postPhase, useContent } from "../composables/useContent";
 import type { MenuItem, MenuTarget } from "../types";
 
 const route = useRoute();
@@ -254,6 +254,47 @@ async function movePostToCategory(name: string, category: string | null, label: 
     await refreshSilently();
   } catch (e) {
     Toast.error(e instanceof Error ? e.message : "移动失败");
+  }
+}
+
+async function moveCategoryTo(payload: {
+  name: string;
+  parent: string | null;
+  index: number;
+  message: string;
+}) {
+  const { name, parent, index, message } = payload;
+  const siblings = (
+    parent ? findCategoryNode(categoryTree.value, parent)?.children ?? [] : categoryTree.value
+  ).filter((node) => node.name !== name);
+  const prev = siblings[index - 1];
+  const next = siblings[index];
+  try {
+    if (prev && next && next.priority - prev.priority < 2) {
+      // 相邻两个序号之间挤不出空位了，把这一组兄弟整体重排成 0、10、20……
+      const ordered = [...siblings.slice(0, index), undefined, ...siblings.slice(index)];
+      for (const [slot, node] of ordered.entries()) {
+        if (node && node.priority !== slot * 10) {
+          await moveCategory(node.name, slot * 10, node.parent ?? null);
+        }
+      }
+      await moveCategory(name, index * 10, parent);
+    } else {
+      const priority =
+        prev && next
+          ? Math.floor((prev.priority + next.priority) / 2)
+          : prev
+            ? prev.priority + 10
+            : next
+              ? next.priority - 10
+              : 0;
+      await moveCategory(name, priority, parent);
+    }
+    Toast.success(`已${message}`);
+    await refreshSilently();
+  } catch (e) {
+    Toast.error(e instanceof Error ? e.message : "移动分类失败");
+    await refreshSilently();
   }
 }
 
@@ -654,6 +695,7 @@ onBeforeUnmount(() => {
       @collapse="toggleTree(true)"
       @open-native="openNativePosts"
       @move-post="movePostToCategory($event.name, $event.category, $event.label)"
+      @move-category="moveCategoryTo($event)"
     />
 
     <div

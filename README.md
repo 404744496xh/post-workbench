@@ -52,10 +52,11 @@ Halo 2.26 控制台插件。把文章管理变成笔记软件式的工作台：�
 ![右键文章行的完整操作菜单](docs/screenshots/04-context-menu.png)
 
 - **多级分类树**：按分类层级缩进展示，文章挂在所属分类下，未分类单独归组。支持搜索（标题 + 摘要，客户端即时过滤）、状态筛选（全部 / 已发布 / 草稿 / 定时）与数量统计；筛选时没有匹配文章的分类（含空的父级）自动隐藏。
-- **就地新建分类**：右键任一分类可以「在其下新建子分类」或「在其上新建同级分类」，弹窗只要求名称与别名（别名留空自动等于名称），并显示父级路径。层级不限深度，写入 Halo 的 `Category.spec.parent`；别名与任何已有分类重复时弹窗内直接提示并禁用创建（Halo 服务端不校验 slug 冲突）；创建成功后树自动展开到新分类。改名、删除与排序仍回 Halo 控制台「文章 - 分类」处理。
+- **就地新建分类**：右键任一分类可以「在其下新建子分类」或「在其上新建同级分类」，弹窗只要求名称与别名（别名留空自动等于名称），并显示父级路径。层级不限深度，写入 Halo 的 `Category.spec.parent`；别名与任何已有分类重复时弹窗内直接提示并禁用创建（Halo 服务端不校验 slug 冲突）；创建成功后树自动展开到新分类。改名与删除仍回 Halo 控制台「文章 - 分类」处理。
+- **拖拽调整分类**：分类行可以直接拖动。落在某行的**中间**（整行高亮）= 变成它的子分类；落在**上缘 / 下缘**（一条插入线）= 与它同级并排到它前面 / 后面，可以顺带跨父级移动。目标已展开且有子分类时，下缘等于「成为它的第一个子分类」（那个位置在树里不存在）。顺序写进 Halo 的 `Category.spec.priority`（升序即显示顺序）：默认只改被拖动的那一条，取相邻两条的中点；中点挤不出空位时把该组兄弟整体重排为 10 的倍数，组内相对顺序不变。父级不能拖到自己的子孙上（Halo 服务端不校验环，挂了会让整棵分支从树里消失，所以前端直接不给落点）。搜索态与状态筛选态下可见行序不等于真实顺序，此时分类行不可拖动。
 - **内嵌原生编辑器**：右侧直接加载 Halo 原生文章编辑器（同源 iframe），隐藏原生侧栏与页脚。标题、正文、保存、发布、版本历史、预览、文章设置、AI 等全部是原生逻辑，Halo 升级后自动获得新能力。
 - **右键菜单**：打开、新标签打开、预览、复制链接、发布 / 取消发布、置顶 / 取消置顶、移动分类、用 Markdown / 富文本编辑、文章设置、删除（进回收站）。
-- **拖拽换分类**：把文章行拖到任意分类即可更换，拖到「未分类」则清空分类。
+- **拖拽换分类**：把文章行拖到任意分类即可更换，拖到「未分类」则清空分类。分类行之间的拖拽见上一条。
 - **新建文章**：头部「＋ 新建」直接开空白编辑器；右键任一分类可以「在此分类新建文章（富文本）」或「（Markdown）」。Markdown 那项在你第一次点「保存」之后自动补做富文本→Markdown 转换（改编辑器注解 + 改快照 `rawType`），所以刷新后就是 Typora 式界面，不需要再手动切换。
 - **悬停摘要**：行内只显示标题、状态点、相对时间与置顶标记，悬停约 0.3s 才弹出摘要卡片，避免列表噪音。
 - **自动同步**：切换文章时静默刷新列表（改名即时反映）；页面可见时每 60s 轮询，窗口重新聚焦时再刷一次。
@@ -103,7 +104,7 @@ Halo 2.26 控制台插件。把文章管理变成笔记软件式的工作台：�
 
 - **不向站外发起任何请求**。Markdown 运行时（lute 解析引擎、图标、中文语言包、KaTeX、highlight.js）全部随插件打包，`cdn` 指向插件自身的静态资源目录。
 - **没有自定义后端**。插件的 Java 侧只有一个空的 `BasePlugin` 子类，不注册接口、不新增数据模型、不建表；所有读写都通过浏览器里已登录的 Halo 控制台原生接口完成，权限完全等同当前账号。
-- **写入 Halo 的数据**：文章本身的内容（保存、发布、置顶、换分类、编辑器转换）、记录某篇文章首选编辑器的注解 `content.halo.run/preferred-editor`，以及你主动创建的新分类（`Category` CR，名字由服务端按 `category-` 生成，字段只有显示名称、别名、父级与优先级）。除此之外不创建、不改名、不删除任何分类或其他对象。
+- **写入 Halo 的数据**：文章本身的内容（保存、发布、置顶、换分类、编辑器转换）、记录某篇文章首选编辑器的注解 `content.halo.run/preferred-editor`、你主动创建的新分类（`Category` CR，名字由服务端按 `category-` 生成，字段只有显示名称、别名、父级与优先级），以及拖拽分类时对 `Category.spec.parent` / `spec.priority` 的改动（拖哪条改哪条；只有同一组兄弟的序号挤不出空位时才会重排该组，重排只改序号不改归属）。除此之外不创建、不改名、不删除任何分类或其他对象。
 - **浏览器本地存储**只有 4 个偏好键，不含正文内容，且仅对当前浏览器生效：
   - `post-workbench:tree-width`：分类树宽度
   - `post-workbench:console-hidden`：是否隐藏控制台导航
@@ -164,7 +165,7 @@ Gradle 会依次执行 `npm install` → 复制 Vditor 运行时 → `vite build
 - **不替换原生页面**：Halo 2.26 的扩展点无法直接替换文章页，因此采用「新增路由 + 同源 iframe 嵌入原生编辑器」的方案，换取原生编辑器能力零重复实现。
 - **iframe 清理**：向 iframe 注入样式隐藏 `.layout > aside.sidebar`、页脚与移动端底部导航，并重置 `.main-content` 尺寸。
 - **切换文章**：原生编辑器只在挂载时读取 `?name=`，仅改 query 不会重载。切换时通过 iframe 内 Vue Router（`#app.__vue_app__`）先跳到占位路由再 `replace` 到目标地址强制重新挂载；失败时回退为整页刷新。
-- **接口**：列表用 `consoleApiClient.content.post.listPosts` 分页并发获取（每页 100，按创建时间倒序，过滤回收站）；分类用 `listCategoryTree`（层级字段 `spec.parent`）；发布 / 取消发布为 `PUT .../publish|unpublish`；置顶与移动分类通过 JSON Patch 修改 `spec.pinned` / `spec.categories`。
+- **接口**：列表用 `consoleApiClient.content.post.listPosts` 分页并发获取（每页 100，按创建时间倒序，过滤回收站）；分类用 `listCategoryTree`（层级字段 `spec.parent`，顺序字段 `spec.priority`）；发布 / 取消发布为 `PUT .../publish|unpublish`；置顶与移动分类通过 JSON Patch 修改 `spec.pinned` / `spec.categories`；拖拽分类走 `PATCH /apis/content.halo.run/v1alpha1/categories/{name}` 改 `spec.parent` 与 `spec.priority`（移到顶层要发空串，发 `null` 会被 Halo 判成 400）。
 - **编辑器注册**：通过 `extensionPoints["editor:create"]` 注册 `rawType: markdown` 的提供方，因此原生编辑器页的编辑器下拉里也能选它。
 - **编辑器切换**：读取 head 内容后转换，调用 `updatePostContent` 写回 raw / content / rawType，并 PATCH 注解 `content.halo.run/preferred-editor`。Halo 更新已有快照时不会改 `spec.rawType`，因此额外 PATCH head 快照的 `spec.rawType` 保证元数据一致。
 - **转换细节**：HTML → Markdown 用 turndown + GFM 插件，针对 Halo 富文本的 `<li>/<td>/<th>` 内嵌 `<p>`、`halo-table-wrapper`、`figure[data-content-type=image]` 图注等结构写了专门规则；Markdown → HTML 用 marked（GFM）。

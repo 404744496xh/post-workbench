@@ -9,9 +9,26 @@ export interface CatNode {
   name: string;
   displayName: string;
   parent?: string;
+  priority: number;
   children: CatNode[];
   posts: ListedPost[];
   count: number;
+}
+
+export function findCategoryNode(nodes: CatNode[], name?: string): CatNode | undefined {
+  if (!name) {
+    return undefined;
+  }
+  for (const node of nodes) {
+    if (node.name === name) {
+      return node;
+    }
+    const found = findCategoryNode(node.children, name);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
 }
 
 export function postPhase(post: Post): PostPhase {
@@ -33,6 +50,7 @@ function buildTree(nodes: CategoryTreeNode[] | undefined, posts: ListedPost[]): 
       name,
       displayName: node.category.spec.displayName || name,
       parent: node.category.spec.parent,
+      priority: node.category.spec.priority ?? 0,
       children,
       posts: own,
       count: own.length + children.reduce((sum, child) => sum + child.count, 0),
