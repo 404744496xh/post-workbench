@@ -8,6 +8,7 @@ export type PostPhase = Exclude<StatusFilter, "all">;
 export interface CatNode {
   name: string;
   displayName: string;
+  slug?: string;
   parent?: string;
   priority: number;
   children: CatNode[];
@@ -49,6 +50,7 @@ function buildTree(nodes: CategoryTreeNode[] | undefined, posts: ListedPost[]): 
     return {
       name,
       displayName: node.category.spec.displayName || name,
+      slug: node.category.spec.slug,
       parent: node.category.spec.parent,
       priority: node.category.spec.priority ?? 0,
       children,

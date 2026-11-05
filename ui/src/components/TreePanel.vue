@@ -21,6 +21,7 @@ interface Row {
   depth: number;
   label: string;
   count?: number;
+  path?: string;
   special?: "all" | "uncategorized";
   category?: CatNode;
   post?: ListedPost;
@@ -322,12 +323,40 @@ function matches(post: ListedPost, keyword: string) {
     .some((value) => value!.toLowerCase().includes(keyword));
 }
 
+function matchesCategory(node: CatNode, keyword: string) {
+  return [node.displayName, node.slug]
+    .filter(Boolean)
+    .some((value) => value!.toLowerCase().includes(keyword));
+}
+
 const rows = computed<Row[]>(() => {
   const keyword = search.value.trim().toLowerCase();
   if (keyword) {
-    return props.posts
-      .filter((post) => matches(post, keyword))
-      .map((post) => ({ ...postRow(post, 0, "search"), id: `s:${post.post.metadata.name}` }));
+    // 搜索结果拍平成一层：先分类（带父级路径），后文章，两者都按原顺序
+    const result: Row[] = [];
+    const visit = (nodes: CatNode[], trail: string[]) => {
+      for (const node of nodes) {
+        if (matchesCategory(node, keyword)) {
+          result.push({
+            id: `sc:${node.name}`,
+            kind: "cat",
+            depth: 0,
+            label: node.displayName,
+            count: node.count,
+            path: trail.join(" / "),
+            category: node,
+          });
+        }
+        visit(node.children, [...trail, node.displayName]);
+      }
+    };
+    visit(props.categoryTree, []);
+    for (const post of props.posts) {
+      if (matches(post, keyword)) {
+        result.push({ ...postRow(post, 0, "search"), id: `s:${post.post.metadata.name}` });
+      }
+    }
+    return result;
   }
 
   const result: Row[] = [];
@@ -421,9 +450,22 @@ function scrollToSelected(name: string) {
     ?.scrollIntoView({ block: "nearest" });
 }
 
+async function jumpToCategory(node: CatNode) {
+  window.clearTimeout(searchTimer);
+  searchInput.value = "";
+  search.value = "";
+  expandAncestors(node.name);
+  await nextTick();
+  bodyRef.value
+    ?.querySelector(`[data-category-name="${node.name}"]`)
+    ?.scrollIntoView({ block: "nearest" });
+}
+
 function activateRow(row: Row) {
   if (row.kind === "post" && row.post) {
     emit("select", row.post.post.metadata.name);
+  } else if (row.kind === "cat" && row.category && search.value.trim()) {
+    void jumpToCategory(row.category);
   } else {
     toggle(row.id);
   }
@@ -580,7 +622,7 @@ onBeforeUnmount(() => {
           ref="searchRef"
           v-model="searchInput"
           class="wb-search__input"
-          placeholder="搜索文章…"
+          placeholder="搜索文章或分类…"
           @keydown.esc="searchInput = ''"
         />
         <button v-if="searchInput" class="wb-icon-btn wb-search__clear" title="清空" @click="searchInput = ''">
@@ -625,7 +667,7 @@ onBeforeUnmount(() => {
       </template>
 
       <div v-else-if="!rows.length" class="wb-tree__state">
-        <p>没有匹配的文章</p>
+        <p>没有匹配的文章或分类</p>
       </div>
 
       <template v-else>
@@ -668,9 +710,15 @@ onBeforeUnmount(() => {
           @drop="onDrop($event, row)"
         >
           <template v-if="row.kind !== 'post'">
-            <span class="wb-caret" :class="{ 'is-open': isExpanded(row.id) }" @click.stop="toggle(row.id)"></span>
+            <span
+              v-if="!search"
+              class="wb-caret"
+              :class="{ 'is-open': isExpanded(row.id) }"
+              @click.stop="toggle(row.id)"
+            ></span>
             <component :is="row.special === 'all' ? IconBookRead : IconFolder" class="wb-folder" />
             <span class="wb-row__title">{{ row.label }}</span>
+            <span v-if="search && row.path" class="wb-row__path">{{ row.path }}</span>
             <span class="wb-row__count">{{ row.count }}</span>
           </template>
           <template v-else>
