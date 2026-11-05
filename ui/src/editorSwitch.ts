@@ -85,10 +85,9 @@ function htmlToMarkdown(html: string) {
 }
 
 export async function switchPostEditor(
-  post: ListedPost,
+  name: string,
   target: PostEditorTarget,
 ) {
-  const name = post.post.metadata.name;
   const [{ data }, { data: latest }] = await Promise.all([
     consoleApiClient.content.post.fetchPostHeadContent({ name }),
     coreApiClient.content.post.getPost({ name }),

@@ -78,13 +78,21 @@ export async function recyclePost(name: string) {
 }
 
 export async function patchPostField(name: string, path: string, value: unknown) {
-  const response = await fetch(`/apis/content.halo.run/v1alpha1/posts/${encodeURIComponent(name)}`, {
-    method: "PATCH",
-    credentials: "include",
-    headers: { "Content-Type": "application/json-patch+json" },
-    body: JSON.stringify([{ op: "add", path, value }]),
-  });
-  if (!response.ok) {
+  // 草稿刚保存后 Halo 还会接着写 status/headSnapshot，读-改-写会撞 409，重试即可
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(`/apis/content.halo.run/v1alpha1/posts/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json-patch+json" },
+      body: JSON.stringify([{ op: "add", path, value }]),
+    });
+    if (response.ok) {
+      return;
+    }
+    if (response.status === 409 && attempt < 3) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+      continue;
+    }
     throw new Error(`更新失败 (${response.status})`);
   }
 }

@@ -64,6 +64,7 @@ const selectedName = ref<string | undefined>(
 );
 const blankOpen = ref(false);
 const pendingCategory = ref<string | null>(null);
+const pendingMarkdown = ref(false);
 const overridePosts = ref(false);
 
 const treeRef = ref<InstanceType<typeof TreePanel>>();
@@ -81,6 +82,7 @@ const editorMode = computed<"idle" | "blank" | "post">(() => {
 function selectPost(name: string) {
   const changed = selectedName.value !== name;
   pendingCategory.value = null;
+  pendingMarkdown.value = false;
   blankOpen.value = false;
   selectedName.value = name;
   if (route.query.name !== name) {
@@ -91,8 +93,9 @@ function selectPost(name: string) {
   }
 }
 
-function createPost(categoryName?: string) {
+function createPost(categoryName?: string, editor: PostEditorTarget = "html") {
   pendingCategory.value = categoryName ?? null;
+  pendingMarkdown.value = editor === "markdown";
   blankOpen.value = true;
   selectedName.value = undefined;
   if (route.query.name) {
@@ -123,16 +126,23 @@ async function handleFrameRoute(path: string) {
     }
     const wasBlank = blankOpen.value;
     const category = pendingCategory.value;
+    const markdown = pendingMarkdown.value;
     selectedName.value = name;
     blankOpen.value = false;
     pendingCategory.value = null;
+    pendingMarkdown.value = false;
     void router.replace({ query: { ...route.query, name } });
-    if (wasBlank && category) {
+    if (wasBlank && (category || markdown)) {
       try {
-        await patchPostField(name, "/spec/categories", [category]);
+        if (category) {
+          await patchPostField(name, "/spec/categories", [category]);
+        }
+        if (markdown) {
+          await switchPostEditor(name, "markdown");
+        }
         await editorRef.value?.reloadCurrent();
       } catch (e) {
-        Toast.error(e instanceof Error ? e.message : "设置分类失败");
+        Toast.error(e instanceof Error ? e.message : "设置新文章失败");
       }
     }
     await refreshSilently();
@@ -172,7 +182,8 @@ const menuItems = computed<MenuItem[]>(() => {
   }
   if (target.kind === "category") {
     return [
-      { id: "new-post", label: "在此分类新建文章", icon: icons.create },
+      { id: "new-post", label: "在此分类新建文章（富文本）", icon: icons.create },
+      { id: "new-post-md", label: "在此分类新建文章（Markdown）", icon: icons.markdown },
       { id: "new-child", label: "在其下新建子分类", icon: icons.folder, divided: true },
       { id: "new-sibling", label: "在其上新建同级分类", icon: icons.folder },
     ];
@@ -405,7 +416,7 @@ function confirmSwitchEditor(post: ListedPost) {
           await editorRef.value?.clickHeaderButton(["保存", "Save"]);
           await new Promise((resolve) => window.setTimeout(resolve, 700));
         }
-        await switchPostEditor(post, target);
+        await switchPostEditor(name, target);
         Toast.success(`已切换为${label}编辑器`);
         await refreshSilently();
         if (selectedName.value === name) {
@@ -425,7 +436,9 @@ async function handleMenuSelect(id: string) {
   }
   if (target.kind === "category") {
     if (id === "new-post") {
-      createPost(target.node.name);
+      createPost(target.node.name, "html");
+    } else if (id === "new-post-md") {
+      createPost(target.node.name, "markdown");
     } else if (id === "new-child" || id === "new-sibling") {
       catDialog.value = { open: true, mode: id === "new-child" ? "child" : "sibling", node: target.node };
     }
