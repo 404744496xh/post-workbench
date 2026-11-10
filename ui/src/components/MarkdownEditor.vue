@@ -685,6 +685,12 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
+/* Vditor 给行内代码设了 pre-wrap + break-word，表格里会被压成一两字符宽，改成不换行让表格横向滚动 */
+.wb-md__editor :deep(.vditor-reset table code:not(.hljs)) {
+  white-space: nowrap;
+  word-break: normal;
+}
+
 /* mermaid 图：与站点前台同一套卡片样式（theme-hao 的 text-diagram） */
 .wb-md__editor :deep(.vditor-ir__preview:has(svg)) {
   margin: 10px 0;
