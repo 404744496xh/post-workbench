@@ -692,7 +692,7 @@ onBeforeUnmount(() => {
 }
 
 /* mermaid 图：与站点前台同一套卡片样式（theme-hao 的 text-diagram） */
-.wb-md__editor :deep(.vditor-ir__preview:has(svg)) {
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid)) {
   margin: 10px 0;
   padding: 18px 14px;
   overflow-x: auto;
@@ -707,32 +707,32 @@ onBeforeUnmount(() => {
     0 10px 30px -12px rgb(15 23 42 / 0.06);
 }
 
-.wb-md__editor :deep(.vditor-ir__preview:has(svg) svg) {
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid) svg) {
   max-width: 100%;
   height: auto;
 }
 
-.wb-md__editor :deep(.vditor-ir__preview:has(svg) .node rect),
-.wb-md__editor :deep(.vditor-ir__preview:has(svg) .node polygon),
-.wb-md__editor :deep(.vditor-ir__preview:has(svg) .node circle) {
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid) .node rect),
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid) .node polygon),
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid) .node circle) {
   rx: 10;
   ry: 10;
   stroke-width: 1.4px;
   filter: drop-shadow(0 1px 2px rgb(15 23 42 / 0.05));
 }
 
-.wb-md__editor :deep(.vditor-ir__preview:has(svg) .nodeLabel) {
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid) .nodeLabel) {
   font-weight: 600;
 }
 
-.wb-md__editor :deep(.vditor-ir__preview:has(svg) .flowchart-link),
-.wb-md__editor :deep(.vditor-ir__preview:has(svg) .edgePath .path) {
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid) .flowchart-link),
+.wb-md__editor :deep(.vditor-ir__preview:has(.language-mermaid) .edgePath .path) {
   stroke-width: 1.8px;
 }
 
-:global(html.dark .wb-md__editor .vditor-ir__preview:has(svg)),
-:global(html[data-theme="dark"] .wb-md__editor .vditor-ir__preview:has(svg)),
-:global(body.dark .wb-md__editor .vditor-ir__preview:has(svg)) {
+:global(html.dark .wb-md__editor .vditor-ir__preview:has(.language-mermaid)),
+:global(html[data-theme="dark"] .wb-md__editor .vditor-ir__preview:has(.language-mermaid)),
+:global(body.dark .wb-md__editor .vditor-ir__preview:has(.language-mermaid)) {
   background-color: rgb(22 28 42 / 0.85);
   background-image: radial-gradient(circle, rgb(148 163 184 / 0.09) 1.2px, transparent 1.2px);
   border-color: rgb(148 163 184 / 0.14);
