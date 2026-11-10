@@ -69,8 +69,9 @@ Halo 2.26 控制台插件。把文章管理变成笔记软件式的工作台：�
 
 - 注册为 Halo 编辑器提供方（`rawType: markdown`），原生编辑器页的「默认编辑器」下拉里也能选它。
 - 基于 Vditor「即时渲染」（IR）模式，隐藏工具栏，正文居中 800px 栏宽、大标题输入框，写法与 Typora 基本一致：输入星号立刻变 **粗体**，输入反引号立刻变 `code`。
-- 支持标题、列表、引用、表格、代码块高亮、图片粘贴 / 拖拽上传、行内与块级公式。
+- 支持标题、列表、引用、表格、代码块高亮、图片粘贴 / 拖拽上传、行内与块级公式，以及 <code>```mermaid</code> 代码块（流程图 / 时序图 / 甘特图等，mermaid 11 随包内置，打开文章即渲染，不依赖站外 CDN）。
 - 右侧「大纲」面板随输入更新，点击标题平滑跳转。
+- **按内容决定默认编辑器**：打开文章时先看 head 快照的 `rawType`，正文是 Markdown 就直接进 Markdown 编辑器；若这篇文章的编辑器注解还停在富文本（常见于被格式转换插件处理过的老文章，注解是 `default`、正文却是 Markdown），打开时会自动把注解纠正回 Markdown，不需要再手动「用 Markdown 编辑」。HTML 文章不受影响。
 - 富文本 ⇄ Markdown 可按文章切换：右键菜单按当前格式显示「用 Markdown 编辑」或「切换到富文本编辑器」，确认后自动转换正文并写回 `content.halo.run/preferred-editor` 注解。富文本转 Markdown 保留标题、加粗、斜体、链接、列表、引用、代码块、表格、图片（含图注）与音视频 / iframe 原始标签；颜色、对齐、画廊排版等纯富文本样式会丢失。
 - **打开即校正渲染结果**：Markdown 编辑器挂载后会用当前源码重新生成 HTML 并回写。历史上被格式转换插件留下「源码是 Markdown、前台却渲染旧 HTML」的文章，在 Markdown 编辑器里打开并保存一次即可恢复正常排版。
 - 保存沿用原生 `Ctrl/⌘ + S` 与顶部保存按钮，写作台不额外拦截快捷键。
@@ -102,9 +103,9 @@ Halo 2.26 控制台插件。把文章管理变成笔记软件式的工作台：�
 
 ## 数据与隐私
 
-- **不向站外发起任何请求**。Markdown 运行时（lute 解析引擎、图标、中文语言包、KaTeX、highlight.js）全部随插件打包，`cdn` 指向插件自身的静态资源目录。
+- **不向站外发起任何请求**。Markdown 运行时（lute 解析引擎、图标、中文语言包、KaTeX、highlight.js、mermaid）全部随插件打包，`cdn` 指向插件自身的静态资源目录。
 - **没有自定义后端**。插件的 Java 侧只有一个空的 `BasePlugin` 子类，不注册接口、不新增数据模型、不建表；所有读写都通过浏览器里已登录的 Halo 控制台原生接口完成，权限完全等同当前账号。
-- **写入 Halo 的数据**：文章本身的内容（保存、发布、置顶、换分类、编辑器转换）、记录某篇文章首选编辑器的注解 `content.halo.run/preferred-editor`、你主动创建的新分类（`Category` CR，名字由服务端按 `category-` 生成，字段只有显示名称、别名、父级与优先级），以及拖拽分类时对 `Category.spec.parent` / `spec.priority` 的改动（拖哪条改哪条；只有同一组兄弟的序号挤不出空位时才会重排该组，重排只改序号不改归属）。除此之外不创建、不改名、不删除任何分类或其他对象。
+- **写入 Halo 的数据**：文章本身的内容（保存、发布、置顶、换分类、编辑器转换）、记录某篇文章首选编辑器的注解 `content.halo.run/preferred-editor`、你主动创建的新分类（`Category` CR，名字由服务端按 `category-` 生成，字段只有显示名称、别名、父级与优先级），打开文章时按正文格式纠正该文章的 `preferred-editor` 注解、拖拽分类时对 `Category.spec.parent` / `spec.priority` 的改动（拖哪条改哪条；只有同一组兄弟的序号挤不出空位时才会重排该组，重排只改序号不改归属）。除此之外不创建、不改名、不删除任何分类或其他对象。
 - **浏览器本地存储**只有 4 个偏好键，不含正文内容，且仅对当前浏览器生效：
   - `post-workbench:tree-width`：分类树宽度
   - `post-workbench:console-hidden`：是否隐藏控制台导航
@@ -141,6 +142,7 @@ Halo 2.26 控制台插件。把文章管理变成笔记软件式的工作台：�
 | [Vditor](https://github.com/Vanessa219/vditor) | 4.0.1 | Markdown 即时渲染编辑器（含 lute 解析引擎、中文语言包、图标） | MIT |
 | [KaTeX](https://katex.org/) | 0.16.9（随 Vditor 打包） | 数学公式渲染 | 代码 MIT；字体 [SIL OFL 1.1](https://openfontlicense.org/) |
 | [highlight.js](https://highlightjs.org/) | 11.7.0（随 Vditor 打包） | 代码块高亮 | BSD-3-Clause |
+| [Mermaid](https://mermaid.js.org/) | 11.17.2（随 Vditor 打包） | mermaid 代码块图表渲染 | MIT |
 | [marked](https://marked.js.org/) | 18.1.2 | Markdown → HTML | MIT |
 | [turndown](https://github.com/mixmark-io/turndown) + [turndown-plugin-gfm](https://github.com/domchristie/turndown-plugin-gfm) | 7.2.4 / 1.0.2 | HTML → Markdown | MIT |
 
@@ -167,7 +169,8 @@ Gradle 会依次执行 `npm install` → 复制 Vditor 运行时 → `vite build
 - **切换文章**：原生编辑器只在挂载时读取 `?name=`，仅改 query 不会重载。切换时通过 iframe 内 Vue Router（`#app.__vue_app__`）先跳到占位路由再 `replace` 到目标地址强制重新挂载；失败时回退为整页刷新。
 - **接口**：列表用 `consoleApiClient.content.post.listPosts` 分页并发获取（每页 100，按创建时间倒序，过滤回收站）；分类用 `listCategoryTree`（层级字段 `spec.parent`，顺序字段 `spec.priority`）；发布 / 取消发布为 `PUT .../publish|unpublish`；置顶与移动分类通过 JSON Patch 修改 `spec.pinned` / `spec.categories`；拖拽分类走 `PATCH /apis/content.halo.run/v1alpha1/categories/{name}` 改 `spec.parent` 与 `spec.priority`（移到顶层要发空串，发 `null` 会被 Halo 判成 400）。
 - **编辑器注册**：通过 `extensionPoints["editor:create"]` 注册 `rawType: markdown` 的提供方，因此原生编辑器页的编辑器下拉里也能选它。
+- **打开前判定编辑器**：选中文章时先 GET 文章与 head 快照，按 `spec.rawType` 决定挂哪个编辑器（判定完成前不挂载 iframe，避免先闪一下富文本）；注解指向富文本而正文其实是 Markdown 时顺手 PATCH 注解。结果按文章名缓存在内存里，切回同一篇不再重复请求。
 - **编辑器切换**：读取 head 内容后转换，调用 `updatePostContent` 写回 raw / content / rawType，并 PATCH 注解 `content.halo.run/preferred-editor`。Halo 更新已有快照时不会改 `spec.rawType`，因此额外 PATCH head 快照的 `spec.rawType` 保证元数据一致。
 - **转换细节**：HTML → Markdown 用 turndown + GFM 插件，针对 Halo 富文本的 `<li>/<td>/<th>` 内嵌 `<p>`、`halo-table-wrapper`、`figure[data-content-type=image]` 图注等结构写了专门规则；Markdown → HTML 用 marked（GFM）。
-- **体积**：KaTeX 只打包 woff2 字体（其 `@font-face` 中 woff2 排在最前，主流浏览器均支持），Vditor 只复制实际用到的运行时文件，jar 相比全量打包减少约三分之一。
+- **体积**：KaTeX 只打包 woff2 字体（其 `@font-face` 中 woff2 排在最前，主流浏览器均支持），Vditor 只复制实际用到的运行时文件；mermaid 11 的运行时约 3.5MB，是目前包内最大的单个资源，只在出现 mermaid 代码块时才被浏览器加载。
 - **性能**：251 篇文章实测首屏约 0.95s（本地），再次进入约 0.4s，切换文章约 0.4s；列表行使用 `content-visibility: auto`，搜索为纯客户端过滤。

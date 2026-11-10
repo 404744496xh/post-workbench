@@ -8,6 +8,8 @@ type Mode = "idle" | "blank" | "post";
 const props = defineProps<{
   mode: Mode;
   postName?: string;
+  /** 父级正在确认该用哪个编辑器，为 true 时先不动 iframe，避免用错编辑器挂载 */
+  hold?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -128,9 +130,9 @@ const browserPath = computed(() =>
 );
 
 watch(
-  () => [props.mode, props.postName] as const,
+  () => [props.mode, props.postName, props.hold] as const,
   () => {
-    if (props.mode === "idle") {
+    if (props.mode === "idle" || props.hold) {
       return;
     }
     if (!frameMounted.value) {
@@ -142,6 +144,16 @@ watch(
     void navigateTo(appPath.value);
   },
   { immediate: true },
+);
+
+// 解析编辑器期间显示加载态，别让上一篇被空态挡住
+watch(
+  () => props.hold,
+  (hold) => {
+    if (hold) {
+      loading.value = true;
+    }
+  },
 );
 
 function getRouter(win: Window): Router | undefined {
@@ -400,7 +412,7 @@ defineExpose({ reloadCurrent, clickHeaderButton });
       <span>编辑器加载中…</span>
     </div>
 
-    <div v-if="mode === 'idle'" class="wb-empty">
+    <div v-if="mode === 'idle' && !frameMounted" class="wb-empty">
       <div class="wb-empty__icon">✦</div>
       <h3>选择一篇文章开始编辑</h3>
       <p>左侧按分类浏览，悬停查看摘要，右键进行发布、移动等操作。</p>

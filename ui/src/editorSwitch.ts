@@ -1,4 +1,4 @@
-import type { ListedPost } from "@halo-dev/api-client";
+import type { ListedPost, Post } from "@halo-dev/api-client";
 import { consoleApiClient, coreApiClient } from "@halo-dev/api-client";
 import { marked } from "marked";
 import TurndownService from "turndown";
@@ -10,6 +10,60 @@ import {
   RICH_EDITOR_NAME,
   type PostEditorTarget,
 } from "./editorMeta";
+
+export type EditorKind = "markdown" | "html";
+
+const editorKinds = new Map<string, EditorKind>();
+
+export function cachedEditorKind(name: string) {
+  return editorKinds.get(name);
+}
+
+export function rememberEditorKind(name: string, kind: EditorKind) {
+  editorKinds.set(name, kind);
+}
+
+/**
+ * 打开文章前确认它实际该用哪个编辑器。Halo 是按 preferred-editor 注解挑编辑器的，
+ * 注解指向富文本但正文其实是 Markdown 时，富文本会把源码当 HTML 渲染 —— 所以以
+ * head 快照的 rawType 为准，并把注解纠正过来。
+ */
+export async function resolveEditorKind(name: string): Promise<EditorKind> {
+  const cached = editorKinds.get(name);
+  if (cached) {
+    return cached;
+  }
+  const response = await fetch(
+    `/apis/content.halo.run/v1alpha1/posts/${encodeURIComponent(name)}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(`读取文章失败 (${response.status})`);
+  }
+  const post = (await response.json()) as Post;
+  const annotation = post.metadata.annotations?.[PREFERRED_EDITOR_ANNOTATION];
+  let kind: EditorKind = annotation === MARKDOWN_EDITOR_NAME ? "markdown" : "html";
+  const snapshotName = post.spec?.headSnapshot;
+  if (snapshotName) {
+    const snapshotResponse = await fetch(
+      `/apis/content.halo.run/v1alpha1/snapshots/${encodeURIComponent(snapshotName)}`,
+      { credentials: "include" },
+    );
+    if (snapshotResponse.ok) {
+      const snapshot = (await snapshotResponse.json()) as { spec?: { rawType?: string } };
+      kind = (snapshot.spec?.rawType ?? "").toLowerCase() === "markdown" ? "markdown" : "html";
+    }
+  }
+  if (kind === "markdown" && annotation !== MARKDOWN_EDITOR_NAME) {
+    await patchPostField(
+      name,
+      `/metadata/annotations/${PREFERRED_EDITOR_ANNOTATION.replace("/", "~1")}`,
+      MARKDOWN_EDITOR_NAME,
+    );
+  }
+  editorKinds.set(name, kind);
+  return kind;
+}
 
 export function isMarkdownPost(post: ListedPost) {
   return (
@@ -130,4 +184,5 @@ export async function switchPostEditor(
     `/metadata/annotations/${PREFERRED_EDITOR_ANNOTATION.replace("/", "~1")}`,
     target === "markdown" ? MARKDOWN_EDITOR_NAME : RICH_EDITOR_NAME,
   );
+  editorKinds.set(name, target);
 }

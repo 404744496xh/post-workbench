@@ -19,6 +19,8 @@ const files = [
   "js/katex/katex.min.js",
   "js/katex/katex.min.css",
   "js/katex/mhchem.min.js",
+  // Vditor 遇到 ```mermaid 时会从自己的 cdn 路径加载它
+  "js/mermaid/mermaid.min.js",
 ];
 
 // 先清掉上一次的产物，否则旧字体不会随构建消失

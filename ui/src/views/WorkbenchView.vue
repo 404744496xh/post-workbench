@@ -37,7 +37,12 @@ import CategoryPicker from "../components/CategoryPicker.vue";
 import ContextMenu from "../components/ContextMenu.vue";
 import EditorPane from "../components/EditorPane.vue";
 import TreePanel from "../components/TreePanel.vue";
-import { isMarkdownPost, switchPostEditor } from "../editorSwitch";
+import {
+  cachedEditorKind,
+  isMarkdownPost,
+  resolveEditorKind,
+  switchPostEditor,
+} from "../editorSwitch";
 import type { PostEditorTarget } from "../editorMeta";
 import type { CatNode } from "../composables/useContent";
 import { findCategoryNode, postPhase, useContent } from "../composables/useContent";
@@ -72,6 +77,10 @@ const editorRef = ref<InstanceType<typeof EditorPane>>();
 
 const selectedPost = computed(() => findPost(selectedName.value));
 
+// 打开文章前要先确认它该用哪个编辑器（Halo 按注解挑，注解可能是错的），确认前不挂载 iframe
+const resolvingEditor = ref(!!selectedName.value && !cachedEditorKind(selectedName.value));
+let resolveSeq = 0;
+
 const editorMode = computed<"idle" | "blank" | "post">(() => {
   if (selectedName.value) {
     return "post";
@@ -79,12 +88,40 @@ const editorMode = computed<"idle" | "blank" | "post">(() => {
   return blankOpen.value ? "blank" : "idle";
 });
 
+async function prepareEditor(name: string) {
+  if (cachedEditorKind(name)) {
+    resolvingEditor.value = false;
+    return;
+  }
+  const seq = ++resolveSeq;
+  resolvingEditor.value = true;
+  try {
+    await resolveEditorKind(name);
+  } catch {
+    // 解析失败就按现有注解打开，不挡编辑
+  } finally {
+    if (seq === resolveSeq) {
+      resolvingEditor.value = false;
+    }
+  }
+}
+
+function postIsMarkdown(post: ListedPost) {
+  const kind = cachedEditorKind(post.post.metadata.name);
+  return kind ? kind === "markdown" : isMarkdownPost(post);
+}
+
+if (selectedName.value) {
+  void prepareEditor(selectedName.value);
+}
+
 function selectPost(name: string) {
   const changed = selectedName.value !== name;
   pendingCategory.value = null;
   pendingMarkdown.value = false;
   blankOpen.value = false;
   selectedName.value = name;
+  void prepareEditor(name);
   if (route.query.name !== name) {
     void router.replace({ query: { ...route.query, name } });
   }
@@ -206,7 +243,7 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: icons.pin,
     },
     { id: "move", label: "移动到分类…", icon: icons.folder },
-    isMarkdownPost(post)
+    postIsMarkdown(post)
       ? { id: "toggle-editor", label: "切换到富文本编辑器", icon: icons.rich }
       : { id: "toggle-editor", label: "用 Markdown 编辑", icon: icons.markdown },
     { id: "settings", label: "打开设置", icon: icons.settings, divided: true },
@@ -440,9 +477,16 @@ async function openSettings(name: string) {
   }
 }
 
-function confirmSwitchEditor(post: ListedPost) {
+async function confirmSwitchEditor(post: ListedPost) {
   const name = post.post.metadata.name;
-  const target: PostEditorTarget = isMarkdownPost(post) ? "html" : "markdown";
+  // 以实际内容格式为准决定「切到哪边」，免得把 Markdown 源码当 HTML 再转一遍
+  let kind: "markdown" | "html" = postIsMarkdown(post) ? "markdown" : "html";
+  try {
+    kind = await resolveEditorKind(name);
+  } catch {
+    // 读不到就按本地判断
+  }
+  const target: PostEditorTarget = kind === "markdown" ? "html" : "markdown";
   const label = target === "markdown" ? "Markdown" : "富文本";
   Dialog.warning({
     title: `切换到${label}编辑器？`,
@@ -521,7 +565,7 @@ async function handleMenuSelect(id: string) {
       openMoveDialog(post);
       break;
     case "toggle-editor":
-      confirmSwitchEditor(post);
+      await confirmSwitchEditor(post);
       break;
     case "settings":
       await openSettings(name);
@@ -716,6 +760,7 @@ onBeforeUnmount(() => {
         ref="editorRef"
         :mode="editorMode"
         :post-name="selectedName"
+        :hold="resolvingEditor"
         @frame-route="handleFrameRoute"
         @create="createPost()"
       />
