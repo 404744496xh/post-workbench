@@ -462,10 +462,15 @@ onMounted(async () => {
   if (!editorEl.value) {
     return;
   }
-  // 先加载 mermaid 并打上配色补丁，Vditor 首次渲染就已经是目标样式
+  // 有 mermaid 时先等一小会儿：脚本已缓存就当场打配色补丁，首次下载则不再阻塞编辑器，
+  // 等脚本到位后再补补丁并按源码重绘预览
   if (props.raw?.includes("```mermaid")) {
-    await ensureMermaid();
+    await Promise.race([ensureMermaid(), new Promise((resolve) => window.setTimeout(resolve, 120))]);
     applyMermaidTheme();
+    void ensureMermaid().then(() => {
+      applyMermaidTheme();
+      void renderMermaidBlocks();
+    });
   }
   const dark = isDark();
   vditor.value = new Vditor(editorEl.value, {
@@ -506,8 +511,13 @@ onMounted(async () => {
           onOutlineClick,
           true,
         );
-        // 打开即回写渲染结果，避免站点端沿用与 Markdown 源码不一致的旧 HTML
-        emit("update:content", withHeadingIds(instance.getHTML()));
+        // 打开即回写渲染结果，避免站点端沿用与 Markdown 源码不一致的旧 HTML。
+        // 整篇 DOM→HTML 转换比较重，放到首帧之后，先把正文显示出来
+        window.setTimeout(() => {
+          if (vditor.value === instance) {
+            emit("update:content", withHeadingIds(instance.getHTML()));
+          }
+        }, 0);
       }
       if (!props.title && !props.raw) {
         titleEl.value?.focus();

@@ -39,7 +39,9 @@ const outlinePanelWidth = ref(288);
 const outlineHeadings = ref<{ level: number; text: string }[]>([]);
 const outlineFlyout = ref(false);
 const src = ref<string>();
+/** 首屏/整页重载时的遮罩；文章之间的 SPA 切换只在顶部走细进度条，避免整块白屏闪 */
 const loading = ref(false);
+const switching = ref(false);
 
 let outlineTimer: number | undefined;
 let flyoutTimer: number | undefined;
@@ -146,12 +148,16 @@ watch(
   { immediate: true },
 );
 
-// 解析编辑器期间显示加载态，别让上一篇被空态挡住
+// 解析编辑器期间：已在编辑器里就保留上一篇内容，只走顶部进度条；首屏才用遮罩
 watch(
   () => props.hold,
   (hold) => {
     if (hold) {
-      loading.value = true;
+      if (frameReady.value) {
+        switching.value = true;
+      } else {
+        loading.value = true;
+      }
     }
   },
 );
@@ -219,6 +225,7 @@ function onLoad() {
   injectStyle(win);
   frameReady.value = false;
   frameVisible.value = false;
+  switching.value = false;
   loading.value = true;
   window.clearInterval(readyTimer);
   const started = Date.now();
@@ -259,7 +266,11 @@ async function navigateTo(targetAppPath: string, force = false) {
   }
 
   const token = ++navToken;
-  loading.value = true;
+  if (frameReady.value) {
+    switching.value = true;
+  } else {
+    loading.value = true;
+  }
   suppressUntil = Date.now() + 5000;
   let fallback = false;
   try {
@@ -294,6 +305,7 @@ async function navigateTo(targetAppPath: string, force = false) {
     win.location.href = `/console${targetAppPath}`;
   } finally {
     if (token === navToken) {
+      switching.value = false;
       if (fallback) {
         frameReady.value = false;
         frameVisible.value = false;
@@ -320,6 +332,7 @@ async function clickHeaderButton(keywords: string[]) {
   const ready = await waitUntil(
     () =>
       !loading.value &&
+      !switching.value &&
       frameReady.value &&
       !!router &&
       router.currentRoute.value.fullPath === target,
@@ -406,6 +419,8 @@ defineExpose({ reloadCurrent, clickHeaderButton });
         </div>
       </div>
     </template>
+
+    <div v-if="switching" class="wb-editor__progress" aria-hidden="true"><span></span></div>
 
     <div v-if="loading" class="wb-editor__loading">
       <span class="wb-spinner"></span>

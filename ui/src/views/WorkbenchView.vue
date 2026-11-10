@@ -40,6 +40,7 @@ import TreePanel from "../components/TreePanel.vue";
 import {
   cachedEditorKind,
   isMarkdownPost,
+  rememberEditorKind,
   resolveEditorKind,
   switchPostEditor,
 } from "../editorSwitch";
@@ -111,9 +112,26 @@ function postIsMarkdown(post: ListedPost) {
   return kind ? kind === "markdown" : isMarkdownPost(post);
 }
 
+// 列表里已经带注解：注解是 markdown 的文章，Halo 本来就会用 Markdown 编辑器打开，
+// 直接缓存即可，省掉打开时再请求文章 + 快照。只有注解不是 markdown 的才需要核对快照。
+watch(
+  filteredPosts,
+  (posts) => {
+    for (const item of posts) {
+      const name = item.post.metadata.name;
+      if (isMarkdownPost(item) && !cachedEditorKind(name)) {
+        rememberEditorKind(name, "markdown");
+      }
+    }
+  },
+  { immediate: true },
+);
+
 if (selectedName.value) {
   void prepareEditor(selectedName.value);
 }
+
+let selectRefreshTimer: number | undefined;
 
 function selectPost(name: string) {
   const changed = selectedName.value !== name;
@@ -126,7 +144,9 @@ function selectPost(name: string) {
     void router.replace({ query: { ...route.query, name } });
   }
   if (changed) {
-    void refreshSilently();
+    // 列表刷新要拉全量文章，等编辑器把新文章挂载完再做，别和打开抢网络/主线程
+    window.clearTimeout(selectRefreshTimer);
+    selectRefreshTimer = window.setTimeout(() => void refreshSilently(), 1200);
   }
 }
 
@@ -711,6 +731,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", onWindowFocus);
   window.removeEventListener("keydown", onGlobalKeydown);
   window.clearInterval(pollTimer);
+  window.clearTimeout(selectRefreshTimer);
   resizeObserver?.disconnect();
   unmountSidebarArrow();
   document.body.classList.remove("wb-console-hidden");

@@ -231,6 +231,7 @@ body.wb-console-hidden .layout > .main-content {
   user-select: none;
   content-visibility: auto;
   contain-intrinsic-size: 30px;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .wb-row:hover {
@@ -529,6 +530,31 @@ body.wb-console-hidden .layout > .main-content {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+/* 文章切换时只在顶部走一条细进度条，不再整块白遮罩闪一下 */
+.wb-editor__progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.wb-editor__progress span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: var(--wb-accent);
+  animation: wb-progress 0.9s ease-in-out infinite;
+}
+
+@keyframes wb-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(400%); }
 }
 
 .wb-editor__loading {
