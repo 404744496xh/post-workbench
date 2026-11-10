@@ -4,6 +4,7 @@ import type { AxiosRequestConfig } from "axios";
 import Vditor from "vditor";
 import "vditor/dist/index.css";
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { applyMermaidTheme } from "../mermaidTheme";
 
 const props = withDefaults(
   defineProps<{
@@ -77,14 +78,37 @@ function ensureMermaid(): Promise<boolean> {
   });
 }
 
-// Vditor 只在输入时渲染代码块预览，打开已有文章时要主动补一次
+// 深浅色切换后需要按新配色重绘。Vditor 渲染后预览区里只剩 SVG，
+// 但同一代码块前面的源码块仍保留 Markdown 原文，用它回填后再渲染。
+// 注意只能渲染预览区：对整个 IR 区域调用会把源码块也替换成 SVG。
 async function renderMermaidBlocks() {
-  const loaded = await ensureMermaid();
   const instance = vditor.value;
-  if (!loaded || !instance) {
+  if (!instance) {
     return;
   }
-  Vditor.mermaidRender(instance.vditor.ir.element, CDN, instance.vditor.options.theme);
+  const previews = Array.from(
+    instance.vditor.ir.element.querySelectorAll(".vditor-ir__preview"),
+  ).filter((preview) => preview.querySelector(".language-mermaid"));
+  if (previews.length === 0) {
+    return;
+  }
+  const loaded = await ensureMermaid();
+  if (!loaded) {
+    return;
+  }
+  applyMermaidTheme();
+  previews.forEach((preview) => {
+    const item = preview.querySelector<HTMLElement>(".language-mermaid");
+    const source = preview.previousElementSibling?.querySelector(
+      "code.language-mermaid",
+    )?.textContent;
+    if (!item || !source) {
+      return;
+    }
+    item.textContent = source;
+    item.removeAttribute("data-processed");
+    Vditor.mermaidRender(preview, CDN, instance.vditor.options.theme);
+  });
 }
 
 const editorEl = ref<HTMLDivElement>();
@@ -353,12 +377,22 @@ function scheduleInlineHtml() {
   inlineHtmlTimer = window.setTimeout(renderInlineHtml, 0);
 }
 
+let mermaidPreparing = false;
+
 function onInput(value: string) {
   scheduleInlineHtml();
   emit("update:raw", value);
   emit("update", value);
   window.clearTimeout(contentTimer);
   contentTimer = window.setTimeout(flushContent, 350);
+  // 新输入的 mermaid 块可能比配色补丁先渲染，补齐后再按源码重绘一遍
+  if (value.includes("```mermaid") && !mermaidPreparing) {
+    mermaidPreparing = true;
+    void ensureMermaid().then(() => {
+      applyMermaidTheme();
+      void renderMermaidBlocks();
+    });
+  }
 }
 
 function onTitleInput(event: Event) {
@@ -418,13 +452,20 @@ function applyTheme() {
     dark ? "github-dark" : "github",
     CONTENT_THEME_PATH,
   );
+  // 深浅色切换后 mermaid 的配色要重算，已有的图需要重新渲染
+  void renderMermaidBlocks();
 }
 
 let themeObserver: MutationObserver | undefined;
 
-onMounted(() => {
+onMounted(async () => {
   if (!editorEl.value) {
     return;
+  }
+  // 先加载 mermaid 并打上配色补丁，Vditor 首次渲染就已经是目标样式
+  if (props.raw?.includes("```mermaid")) {
+    await ensureMermaid();
+    applyMermaidTheme();
   }
   const dark = isDark();
   vditor.value = new Vditor(editorEl.value, {
@@ -467,7 +508,6 @@ onMounted(() => {
         );
         // 打开即回写渲染结果，避免站点端沿用与 Markdown 源码不一致的旧 HTML
         emit("update:content", withHeadingIds(instance.getHTML()));
-        void renderMermaidBlocks();
       }
       if (!props.title && !props.raw) {
         titleEl.value?.focus();
@@ -643,6 +683,56 @@ onBeforeUnmount(() => {
 
 .wb-md__editor :deep(.vditor-reset) {
   font-size: 16px;
+}
+
+/* mermaid 图：与站点前台同一套卡片样式（theme-hao 的 text-diagram） */
+.wb-md__editor :deep(.vditor-ir__preview:has(svg)) {
+  margin: 10px 0;
+  padding: 18px 14px;
+  overflow-x: auto;
+  text-align: center;
+  background-color: rgb(255 255 255 / 0.92);
+  background-image: radial-gradient(circle, rgb(99 102 241 / 0.08) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+  border: 1px solid #eceef5;
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.06),
+    0 10px 30px -12px rgb(15 23 42 / 0.06);
+}
+
+.wb-md__editor :deep(.vditor-ir__preview:has(svg) svg) {
+  max-width: 100%;
+  height: auto;
+}
+
+.wb-md__editor :deep(.vditor-ir__preview:has(svg) .node rect),
+.wb-md__editor :deep(.vditor-ir__preview:has(svg) .node polygon),
+.wb-md__editor :deep(.vditor-ir__preview:has(svg) .node circle) {
+  rx: 10;
+  ry: 10;
+  stroke-width: 1.4px;
+  filter: drop-shadow(0 1px 2px rgb(15 23 42 / 0.05));
+}
+
+.wb-md__editor :deep(.vditor-ir__preview:has(svg) .nodeLabel) {
+  font-weight: 600;
+}
+
+.wb-md__editor :deep(.vditor-ir__preview:has(svg) .flowchart-link),
+.wb-md__editor :deep(.vditor-ir__preview:has(svg) .edgePath .path) {
+  stroke-width: 1.8px;
+}
+
+:global(html.dark .wb-md__editor .vditor-ir__preview:has(svg)),
+:global(html[data-theme="dark"] .wb-md__editor .vditor-ir__preview:has(svg)),
+:global(body.dark .wb-md__editor .vditor-ir__preview:has(svg)) {
+  background-color: rgb(22 28 42 / 0.85);
+  background-image: radial-gradient(circle, rgb(148 163 184 / 0.09) 1.2px, transparent 1.2px);
+  border-color: rgb(148 163 184 / 0.14);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.45),
+    0 10px 30px -12px rgb(0 0 0 / 0.45);
 }
 
 /* 行内 HTML 补出来的预览：跟着文字走，不要撑出块级间距 */
