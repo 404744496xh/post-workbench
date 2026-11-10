@@ -37,6 +37,56 @@ const emit = defineEmits<{
 const CDN = "/plugins/post-workbench/assets/ui/vditor";
 const CONTENT_THEME_PATH = `${CDN}/dist/css/content-theme`;
 
+// Vditor 自己请求的是 mermaid.min.js?v=11.17.2，这个地址在加上 mermaid 支持前可能
+// 已经被浏览器按 404 缓存过（Halo 的 404 带 max-age），所以这里用带自建版本号的地址
+// 先加载一次：script 的 id 与 Vditor 内部一致，它检测到后不会再发自己的请求。
+const MERMAID_SCRIPT_ID = "vditorMermaidScript";
+const MERMAID_SRC = `${CDN}/dist/js/mermaid/mermaid.min.js?v=11.17.2-pw1`;
+const mermaidWindow = () => window as unknown as { mermaid?: unknown };
+
+function ensureMermaid(): Promise<boolean> {
+  if (mermaidWindow().mermaid) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    let script = document.getElementById(MERMAID_SCRIPT_ID) as HTMLScriptElement | null;
+    const done = () => resolve(!!mermaidWindow().mermaid);
+    if (script) {
+      if (script.dataset.loaded === "1") {
+        done();
+        return;
+      }
+      script.addEventListener("load", done, { once: true });
+      script.addEventListener("error", done, { once: true });
+      return;
+    }
+    script = document.createElement("script");
+    script.id = MERMAID_SCRIPT_ID;
+    script.src = MERMAID_SRC;
+    script.async = true;
+    script.addEventListener(
+      "load",
+      () => {
+        (script as HTMLScriptElement).dataset.loaded = "1";
+        done();
+      },
+      { once: true },
+    );
+    script.addEventListener("error", done, { once: true });
+    document.head.appendChild(script);
+  });
+}
+
+// Vditor 只在输入时渲染代码块预览，打开已有文章时要主动补一次
+async function renderMermaidBlocks() {
+  const loaded = await ensureMermaid();
+  const instance = vditor.value;
+  if (!loaded || !instance) {
+    return;
+  }
+  Vditor.mermaidRender(instance.vditor.ir.element, CDN, instance.vditor.options.theme);
+}
+
 const editorEl = ref<HTMLDivElement>();
 const titleEl = ref<HTMLInputElement>();
 const vditor = shallowRef<Vditor>();
@@ -417,6 +467,7 @@ onMounted(() => {
         );
         // 打开即回写渲染结果，避免站点端沿用与 Markdown 源码不一致的旧 HTML
         emit("update:content", withHeadingIds(instance.getHTML()));
+        void renderMermaidBlocks();
       }
       if (!props.title && !props.raw) {
         titleEl.value?.focus();
