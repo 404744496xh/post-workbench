@@ -478,10 +478,21 @@ function clipboardImageFiles(data: DataTransfer): File[] {
     }
   }
   const plain = data.getData("text/plain").trim();
-  if (/^<svg[\s>]/i.test(plain)) {
+  if (isSvgSource(plain)) {
     return [new File([plain], "pasted.svg", { type: "image/svg+xml" })];
   }
   return [];
+}
+
+// draw.io 等工具导出的 SVG 源码带 XML 声明和 DOCTYPE，不一定以 <svg 开头
+function isSvgSource(value: string) {
+  const text = value.replace(/^\uFEFF/, "").trimStart();
+  if (!/<\/svg>\s*$/i.test(text) || !/<svg[\s>]/i.test(text.slice(0, 2000))) {
+    return false;
+  }
+  return /^(?:<\?xml[\s\S]*?\?>\s*)?(?:<!DOCTYPE[\s\S]*?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(
+    text,
+  );
 }
 
 function onPasteCapture(event: ClipboardEvent) {
