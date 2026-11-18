@@ -4,6 +4,7 @@ import type { AxiosRequestConfig } from "axios";
 import Vditor from "vditor";
 import "vditor/dist/index.css";
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { MERMAID_SCRIPT_ID, MERMAID_SRC } from "../mermaidAsset";
 import { applyMermaidTheme } from "../mermaidTheme";
 
 const props = withDefaults(
@@ -41,8 +42,6 @@ const CONTENT_THEME_PATH = `${CDN}/dist/css/content-theme`;
 // Vditor 自己请求的是 mermaid.min.js?v=11.17.2，这个地址在加上 mermaid 支持前可能
 // 已经被浏览器按 404 缓存过（Halo 的 404 带 max-age），所以这里用带自建版本号的地址
 // 先加载一次：script 的 id 与 Vditor 内部一致，它检测到后不会再发自己的请求。
-const MERMAID_SCRIPT_ID = "vditorMermaidScript";
-const MERMAID_SRC = `${CDN}/dist/js/mermaid/mermaid.min.js?v=11.17.2-pw1`;
 const mermaidWindow = () => window as unknown as { mermaid?: unknown };
 
 function ensureMermaid(): Promise<boolean> {
@@ -416,6 +415,99 @@ function onWindowKeydown(event: KeyboardEvent) {
   }
 }
 
+function fileFromDataUrl(src: string): File | undefined {
+  const matched = /^data:(image\/[\w.+-]+)(;base64)?,(.*)$/is.exec(src);
+  if (!matched) {
+    return;
+  }
+  try {
+    const mime = matched[1].toLowerCase();
+    const data = matched[2]
+      ? Uint8Array.from(atob(matched[3].replace(/\s/g, "")), (ch) =>
+          ch.charCodeAt(0),
+        )
+      : new TextEncoder().encode(decodeURIComponent(matched[3]));
+    const ext = mime === "image/svg+xml" ? "svg" : mime.split("/")[1] || "png";
+    return new File([data], `pasted.${ext}`, { type: mime });
+  } catch {
+    return;
+  }
+}
+
+// Vditor 粘贴时只要剪贴板带 HTML 就走 HTML 分支：data: 图片会被清洗成空地址，
+// 留下一个 ![]()；同时带 file:// 的截图也会变成加载不出来的本地地址。
+// 这里先取出真正的图片文件（含内联 svg），交给附件上传。
+function clipboardImageFiles(data: DataTransfer): File[] {
+  const files: File[] = [];
+  for (const item of Array.from(data.items)) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) {
+      continue;
+    }
+    const file = item.getAsFile();
+    if (file && file.size > 0) {
+      files.push(file);
+    }
+  }
+  if (files.length > 0) {
+    return files;
+  }
+  const html = data.getData("text/html");
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const embedded: File[] = [];
+    doc.querySelectorAll("img").forEach((img) => {
+      const src = img.getAttribute("src") ?? "";
+      if (!src.startsWith("data:image/")) {
+        return;
+      }
+      const file = fileFromDataUrl(src);
+      if (file) {
+        embedded.push(file);
+      }
+    });
+    const svg = doc.querySelector("svg");
+    if (embedded.length === 0 && svg) {
+      embedded.push(
+        new File([new XMLSerializer().serializeToString(svg)], "pasted.svg", {
+          type: "image/svg+xml",
+        }),
+      );
+    }
+    if (embedded.length > 0) {
+      return embedded;
+    }
+  }
+  const plain = data.getData("text/plain").trim();
+  if (/^<svg[\s>]/i.test(plain)) {
+    return [new File([plain], "pasted.svg", { type: "image/svg+xml" })];
+  }
+  return [];
+}
+
+function onPasteCapture(event: ClipboardEvent) {
+  if (!event.clipboardData) {
+    return;
+  }
+  // 代码块里的粘贴保持纯文本行为（IR 的编辑根节点本身就是 pre，只能按光标判断）
+  const anchor = window.getSelection()?.anchorNode;
+  const holder =
+    anchor instanceof Element ? anchor : anchor?.parentElement ?? null;
+  if (holder?.closest("code")) {
+    return;
+  }
+  const images = clipboardImageFiles(event.clipboardData);
+  if (images.length === 0) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  void handleUpload(images).then((message) => {
+    if (typeof message === "string") {
+      vditor.value?.tip(message, 3000);
+    }
+  });
+}
+
 async function handleUpload(files: File[]) {
   if (!props.upload) {
     return "没有附件上传权限";
@@ -580,7 +672,11 @@ onBeforeUnmount(() => {
       />
     </div>
     <div class="wb-md__body">
-      <div ref="editorEl" class="wb-md__editor"></div>
+      <div
+        ref="editorEl"
+        class="wb-md__editor"
+        @paste.capture="onPasteCapture"
+      ></div>
 
       <template v-if="outlineAvailable">
         <button

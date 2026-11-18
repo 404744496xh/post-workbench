@@ -3,9 +3,11 @@ import { definePlugin } from "@halo-dev/ui-shared";
 import { defineAsyncComponent, markRaw } from "vue";
 import { setupPostsOverride } from "./bootstrap";
 import { MARKDOWN_EDITOR_NAME } from "./editorMeta";
+import { prefetchMermaid } from "./mermaidAsset";
 import "./styles/workbench.css";
 
 setupPostsOverride();
+window.setTimeout(prefetchMermaid, 2500);
 
 export default definePlugin({
   extensionPoints: {

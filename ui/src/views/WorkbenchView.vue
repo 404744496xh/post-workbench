@@ -45,6 +45,7 @@ import {
   switchPostEditor,
 } from "../editorSwitch";
 import type { PostEditorTarget } from "../editorMeta";
+import { prefetchMermaid } from "../mermaidAsset";
 import type { CatNode } from "../composables/useContent";
 import { findCategoryNode, postPhase, useContent } from "../composables/useContent";
 import type { MenuItem, MenuTarget } from "../types";
@@ -702,9 +703,12 @@ function onWindowFocus() {
   void refreshSilently();
 }
 
+let prefetchTimer = 0;
+
 onMounted(() => {
   applyConsoleHidden();
   mountSidebarArrow();
+  prefetchTimer = window.setTimeout(prefetchMermaid, 1500);
   void isOverridePostsEnabled().then((value) => {
     overridePosts.value = value;
   });
@@ -732,6 +736,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onGlobalKeydown);
   window.clearInterval(pollTimer);
   window.clearTimeout(selectRefreshTimer);
+  window.clearTimeout(prefetchTimer);
   resizeObserver?.disconnect();
   unmountSidebarArrow();
   document.body.classList.remove("wb-console-hidden");
