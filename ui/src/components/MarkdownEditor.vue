@@ -3,9 +3,12 @@ import type { Attachment } from "@halo-dev/api-client";
 import type { AxiosRequestConfig } from "axios";
 import Vditor from "vditor";
 import "vditor/dist/index.css";
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { h, markRaw, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import type { Component } from "vue";
 import { MERMAID_SCRIPT_ID, MERMAID_SRC } from "../mermaidAsset";
 import { applyMermaidTheme } from "../mermaidTheme";
+import ContextMenu from "./ContextMenu.vue";
+import type { MenuItem } from "../types";
 
 const props = withDefaults(
   defineProps<{
@@ -112,8 +115,99 @@ async function renderMermaidBlocks() {
 
 const editorEl = ref<HTMLDivElement>();
 const titleEl = ref<HTMLInputElement>();
+const hostEl = ref<HTMLDivElement>();
 const vditor = shallowRef<Vditor>();
 const ready = ref(false);
+
+// 块左侧的「+ / 拖拽柄」与编辑器右键菜单
+const GUTTER_WIDTH = 48;
+const gutterBlock = shallowRef<HTMLElement | null>(null);
+const gutterPos = ref({ left: 0, top: 0, width: GUTTER_WIDTH, compact: false });
+const dropLine = ref<{ top: number; left: number; width: number } | null>(null);
+const menuOpen = ref(false);
+const menuPos = ref({ x: 0, y: 0 });
+const menuItems = ref<MenuItem[]>([]);
+let menuActions: Record<string, () => void> = {};
+let draggingBlock: HTMLElement | null = null;
+let dropTarget: { block: HTMLElement; after: boolean } | null = null;
+let gutterTimer: number | undefined;
+let dragStart: { x: number; y: number } | null = null;
+let dragActive = false;
+let suppressHandleClick = false;
+
+const ICON_PATHS = {
+  text: ["M3.5 3.5h9", "M8 3.5v9", "M5.5 12.5h5"],
+  title: ["M3.5 4h9", "M8 4v8"],
+  plus: ["M8 3v10", "M3 8h10"],
+  list: ["M3 4.5h2M7 4.5h6", "M3 8h2M7 8h6", "M3 11.5h2M7 11.5h6"],
+  ordered: [
+    "M3 3.5h1.2v3",
+    "M2.8 6.5h1.6",
+    "M3 9.5c.2-.6.8-1 1.4-.8.8.1 1.2.9.9 1.6L2.8 12.5h2.4",
+    "M7 4.5h6",
+    "M7 8h6",
+    "M7 11.5h6",
+  ],
+  check: ["M3 4.5h10", "M3 8h10", "M3 11.5h6"],
+  quote: [
+    "M3.5 5.5h2.5v2.5H3.5z",
+    "M3.5 8c0 1.6.8 2.5 2 3",
+    "M9.5 5.5H12v2.5H9.5z",
+    "M9.5 8c0 1.6.8 2.5 2 3",
+  ],
+  code: ["M6 5L3.5 8 6 11", "M10 5l2.5 3L10 11"],
+  table: ["M2.5 3.5h11v9h-11z", "M2.5 6.5h11M2.5 9.5h11", "M6 3.5v9M10 3.5v9"],
+  line: ["M2.5 8h11"],
+  copy: [
+    "M5.5 5.5h8v8h-8z",
+    "M10.5 5.5v-1a1 1 0 00-1-1h-6a1 1 0 00-1 1v6a1 1 0 001 1h1",
+  ],
+  top: ["M8 12.5v-9", "M4.5 7L8 3.5 11.5 7", "M3.5 13.5h9"],
+  move: ["M2.5 5.5h4l1.2 1.5h5.8v5.5h-11z", "M8 8.5h4", "M10.2 6.7L12 8.5l-1.8 1.8"],
+  trash: ["M2.5 4.5h11", "M6.5 4.5V3h3v1.5", "M4 4.5l.6 8.5h6.8l.6-8.5"],
+  bold: ["M5 3h3.2a2.3 2.3 0 010 4.6H5z", "M5 7.6h3.8a2.4 2.4 0 010 4.8H5z"],
+  italic: ["M6.5 3.5h4", "M5.5 12.5h4", "M9.2 3.5L6.8 12.5"],
+  strike: [
+    "M3.5 8h9",
+    "M5.2 5.4A2.5 2.5 0 017.6 3.5h1.2a2.2 2.2 0 012 1.1",
+    "M10.8 10.6a2.5 2.5 0 01-2.4 1.9H7.2a2.2 2.2 0 01-2-1.1",
+  ],
+  link: [
+    "M6.5 9.5l3-3",
+    "M7.5 4.5l1-1a2.1 2.1 0 013 3l-1 1",
+    "M8.5 11.5l-1 1a2.1 2.1 0 01-3-3l1-1",
+  ],
+  undo: ["M3.5 7a4.5 4.5 0 1 1 1.4 4.3", "M3.5 3.5V7H7"],
+  redo: ["M12.5 6.5A4.5 4.5 0 113.5 9", "M12.5 3.5v3h-3"],
+} as const;
+
+type MenuIconName = keyof typeof ICON_PATHS;
+
+const menuIcons = Object.fromEntries(
+  (Object.keys(ICON_PATHS) as MenuIconName[]).map((name) => {
+    const paths = ICON_PATHS[name];
+    return [
+      name,
+      markRaw({
+        name: `WbIcon${name}`,
+        render: () =>
+          h(
+            "svg",
+            { viewBox: "0 0 16 16", fill: "none" },
+            paths.map((d) =>
+              h("path", {
+                d,
+                stroke: "currentColor",
+                "stroke-width": 1.4,
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+              }),
+            ),
+          ),
+      }),
+    ];
+  }),
+) as Record<MenuIconName, Component>;
 
 // 与富文本编辑器共用同一个折叠偏好
 const OUTLINE_KEY = "post-workbench:outline-hidden";
@@ -402,6 +496,527 @@ function focusEditor() {
   vditor.value?.focus();
 }
 
+function runToolbarAction(name: string) {
+  vditor.value?.focus();
+  vditor.value?.vditor.toolbar?.elements?.[name]
+    ?.querySelector<HTMLElement>("button")
+    ?.click();
+}
+
+function editorReset() {
+  return (
+    editorEl.value?.querySelector<HTMLElement>(".vditor-ir .vditor-reset") ??
+    null
+  );
+}
+
+function topBlockOf(node: Node | null) {
+  const reset = editorReset();
+  if (!reset || !node) {
+    return null;
+  }
+  let element: Element | null =
+    node instanceof Element ? node : node.parentElement;
+  while (element && element.parentElement !== reset) {
+    element = element.parentElement;
+  }
+  return element instanceof HTMLElement && element.parentElement === reset
+    ? element
+    : null;
+}
+
+function positionGutter(block: HTMLElement) {
+  const host = hostEl.value;
+  if (!host) {
+    return;
+  }
+  const hostRect = host.getBoundingClientRect();
+  const rect = block.getBoundingClientRect();
+  if (rect.bottom < hostRect.top + 2 || rect.top > hostRect.bottom - 2) {
+    gutterBlock.value = null;
+    return;
+  }
+  // 写作台的正文栏离左缘很近：放得下 48px 用双按钮，否则收成 34px 紧凑手柄
+  const available = rect.left - hostRect.left - 2;
+  if (available < 34) {
+    gutterBlock.value = null;
+    return;
+  }
+  const compact = available < GUTTER_WIDTH;
+  const width = compact ? 34 : GUTTER_WIDTH;
+  gutterPos.value = {
+    left: available - width,
+    top: Math.max(2, rect.top - hostRect.top + 2),
+    width,
+    compact,
+  };
+}
+
+function cancelGutterHide() {
+  window.clearTimeout(gutterTimer);
+}
+
+function scheduleGutterHide() {
+  cancelGutterHide();
+  gutterTimer = window.setTimeout(() => {
+    if (!draggingBlock) {
+      gutterBlock.value = null;
+    }
+  }, 220);
+}
+
+function hideGutterNow() {
+  cancelGutterHide();
+  gutterBlock.value = null;
+}
+
+function onEditorMouseMove(event: MouseEvent) {
+  if (draggingBlock) {
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target?.closest?.(".wb-block-gutter")) {
+    cancelGutterHide();
+    return;
+  }
+  const block = topBlockOf(target);
+  if (!block) {
+    scheduleGutterHide();
+    return;
+  }
+  cancelGutterHide();
+  gutterBlock.value = block;
+  positionGutter(block);
+}
+
+function setBlockCaret(block: HTMLElement, edge: "start" | "end") {
+  vditor.value?.focus();
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  range.collapse(edge === "start");
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function caretRangeAt(event: MouseEvent) {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (
+      x: number,
+      y: number,
+    ) => { offsetNode: Node; offset: number } | null;
+  };
+  if (doc.caretRangeFromPoint) {
+    return doc.caretRangeFromPoint(event.clientX, event.clientY);
+  }
+  const position = doc.caretPositionFromPoint?.(
+    event.clientX,
+    event.clientY,
+  );
+  if (!position) {
+    return null;
+  }
+  const range = document.createRange();
+  range.setStart(position.offsetNode, position.offset);
+  range.collapse(true);
+  return range;
+}
+
+// 直接移动/删除块后，借 Vditor 自己的 preventInput 通道同步 markdown 与撤销栈
+function syncDomChange() {
+  const internal = vditor.value?.vditor;
+  if (!internal?.ir) {
+    return;
+  }
+  internal.ir.preventInput = true;
+  internal.ir.element.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertReorderedContent",
+    }),
+  );
+}
+
+type InsertKind =
+  | "paragraph"
+  | "heading"
+  | "list"
+  | "check"
+  | "quote"
+  | "code"
+  | "table"
+  | "line";
+
+function insertBlock(block: HTMLElement, kind: InsertKind) {
+  hideGutterNow();
+  setBlockCaret(block, "end");
+  runToolbarAction("insert-after");
+  if (kind === "paragraph") {
+    return;
+  }
+  if (kind === "heading") {
+    vditor.value?.vditor.toolbar?.elements?.headings
+      ?.querySelector<HTMLElement>('[data-tag="h2"]')
+      ?.click();
+    return;
+  }
+  runToolbarAction(kind);
+}
+
+function insertAtBlock(block: HTMLElement, before: boolean) {
+  hideGutterNow();
+  setBlockCaret(block, before ? "start" : "end");
+  runToolbarAction(before ? "insert-before" : "insert-after");
+}
+
+function moveBlock(block: HTMLElement, direction: -1 | 1) {
+  const sibling =
+    direction < 0 ? block.previousElementSibling : block.nextElementSibling;
+  if (!(sibling instanceof HTMLElement)) {
+    return;
+  }
+  if (direction < 0) {
+    sibling.before(block);
+  } else {
+    sibling.after(block);
+  }
+  syncDomChange();
+  hideGutterNow();
+}
+
+function deleteBlock(block: HTMLElement) {
+  const reset = editorReset();
+  if (!reset) {
+    return;
+  }
+  const following =
+    block.nextElementSibling instanceof HTMLElement
+      ? block.nextElementSibling
+      : null;
+  const preceding =
+    block.previousElementSibling instanceof HTMLElement
+      ? block.previousElementSibling
+      : null;
+  block.remove();
+  if (!reset.children.length) {
+    reset.insertAdjacentHTML("beforeend", '<p data-block="0"><br></p>');
+  }
+  syncDomChange();
+  if (following) {
+    setBlockCaret(following, "start");
+  } else if (preceding) {
+    setBlockCaret(preceding, "end");
+  }
+  hideGutterNow();
+}
+
+async function copyBlock(block: HTMLElement) {
+  const markdown = vditor.value?.vditor.lute
+    .VditorIRDOM2Md(block.outerHTML)
+    .trim();
+  hideGutterNow();
+  if (!markdown) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(markdown);
+    vditor.value?.tip("已复制块 Markdown");
+  } catch {
+    vditor.value?.tip("复制失败");
+  }
+}
+
+function anchorAt(event: MouseEvent) {
+  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+  if (!rect) {
+    return event;
+  }
+  return new MouseEvent("click", {
+    clientX: rect.right + 6,
+    clientY: rect.bottom + 4,
+    bubbles: true,
+    cancelable: true,
+  });
+}
+
+function openEditorMenu(
+  event: MouseEvent,
+  items: MenuItem[],
+  actions: Record<string, () => void>,
+) {
+  event.preventDefault();
+  event.stopPropagation();
+  menuActions = actions;
+  menuItems.value = items;
+  menuPos.value = { x: event.clientX, y: event.clientY };
+  menuOpen.value = true;
+}
+
+function onMenuSelect(id: string) {
+  menuOpen.value = false;
+  const action = menuActions[id];
+  menuActions = {};
+  action?.();
+}
+
+function onPlusClick(event: MouseEvent) {
+  const block = gutterBlock.value;
+  if (!block) {
+    return;
+  }
+  hideGutterNow();
+  openEditorMenu(
+    anchorAt(event),
+    [
+      { id: "plus:paragraph", label: "段落", icon: menuIcons.text },
+      { id: "plus:heading", label: "二级标题", icon: menuIcons.title },
+      { id: "plus:list", label: "无序列表", icon: menuIcons.list },
+      { id: "plus:check", label: "任务列表", icon: menuIcons.check },
+      { id: "plus:quote", label: "引用", icon: menuIcons.quote },
+      { id: "plus:code", label: "代码块", icon: menuIcons.code },
+      { id: "plus:table", label: "表格", icon: menuIcons.table },
+      { id: "plus:line", label: "分隔线", icon: menuIcons.line },
+    ],
+    {
+      "plus:paragraph": () => insertBlock(block, "paragraph"),
+      "plus:heading": () => insertBlock(block, "heading"),
+      "plus:list": () => insertBlock(block, "list"),
+      "plus:check": () => insertBlock(block, "check"),
+      "plus:quote": () => insertBlock(block, "quote"),
+      "plus:code": () => insertBlock(block, "code"),
+      "plus:table": () => insertBlock(block, "table"),
+      "plus:line": () => insertBlock(block, "line"),
+    },
+  );
+}
+
+function onHandleClick(event: MouseEvent) {
+  const block = gutterBlock.value;
+  if (!block || draggingBlock || suppressHandleClick) {
+    suppressHandleClick = false;
+    return;
+  }
+  hideGutterNow();
+  openEditorMenu(
+    anchorAt(event),
+    [
+      {
+        id: "block:before",
+        label: "上方插入段落",
+        icon: menuIcons.top,
+      },
+      {
+        id: "block:after",
+        label: "下方插入段落",
+        icon: menuIcons.plus,
+      },
+      {
+        id: "block:copy",
+        label: "复制块",
+        icon: menuIcons.copy,
+        divided: true,
+      },
+      {
+        id: "block:up",
+        label: "上移",
+        icon: menuIcons.top,
+        disabled: !block.previousElementSibling,
+      },
+      {
+        id: "block:down",
+        label: "下移",
+        icon: menuIcons.move,
+        disabled: !block.nextElementSibling,
+      },
+      {
+        id: "block:delete",
+        label: "删除块",
+        icon: menuIcons.trash,
+        danger: true,
+        divided: true,
+      },
+    ],
+    {
+      "block:before": () => insertAtBlock(block, true),
+      "block:after": () => insertAtBlock(block, false),
+      "block:copy": () => void copyBlock(block),
+      "block:up": () => moveBlock(block, -1),
+      "block:down": () => moveBlock(block, 1),
+      "block:delete": () => deleteBlock(block),
+    },
+  );
+}
+
+function updateDropTarget(target: HTMLElement, clientY: number) {
+  const host = hostEl.value;
+  if (!host) {
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const after = clientY > rect.top + rect.height / 2;
+  dropTarget = { block: target, after };
+  const hostRect = host.getBoundingClientRect();
+  dropLine.value = {
+    top: (after ? rect.bottom : rect.top) - hostRect.top,
+    left: rect.left - hostRect.left,
+    width: rect.width,
+  };
+}
+
+function onHandleMouseDown(event: MouseEvent) {
+  if (event.button !== 0) {
+    return;
+  }
+  const block = gutterBlock.value;
+  if (!block) {
+    return;
+  }
+  event.preventDefault();
+  dragStart = { x: event.clientX, y: event.clientY };
+  dragActive = false;
+  draggingBlock = block;
+  window.addEventListener("mousemove", onDragMouseMove);
+  window.addEventListener("mouseup", onDragMouseUp);
+}
+
+function onDragMouseMove(event: MouseEvent) {
+  if (!draggingBlock || !dragStart) {
+    return;
+  }
+  if (!dragActive) {
+    if (
+      Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) < 4
+    ) {
+      return;
+    }
+    dragActive = true;
+    draggingBlock.classList.add("wb-block-dragging");
+    hideGutterNow();
+  }
+  const target = topBlockOf(
+    document.elementFromPoint(event.clientX, event.clientY),
+  );
+  if (!target) {
+    dropLine.value = null;
+    dropTarget = null;
+    return;
+  }
+  updateDropTarget(target, event.clientY);
+}
+
+function cleanupDrag() {
+  draggingBlock?.classList.remove("wb-block-dragging");
+  draggingBlock = null;
+  dropTarget = null;
+  dropLine.value = null;
+}
+
+function onDragMouseUp() {
+  window.removeEventListener("mousemove", onDragMouseMove);
+  window.removeEventListener("mouseup", onDragMouseUp);
+  const source = draggingBlock;
+  const target = dropTarget;
+  const moved = dragActive;
+  dragStart = null;
+  dragActive = false;
+  if (moved && source && target && target.block !== source) {
+    const noop =
+      (target.after && target.block.nextElementSibling === source) ||
+      (!target.after && target.block.previousElementSibling === source);
+    if (!noop) {
+      if (target.after) {
+        target.block.after(source);
+      } else {
+        target.block.before(source);
+      }
+      syncDomChange();
+    }
+  }
+  cleanupDrag();
+  if (moved) {
+    suppressHandleClick = true;
+    window.setTimeout(() => {
+      suppressHandleClick = false;
+    }, 0);
+    hideGutterNow();
+  }
+}
+
+function onEditorScroll() {
+  if (gutterBlock.value) {
+    positionGutter(gutterBlock.value);
+  }
+}
+
+function onEditorContextMenu(event: MouseEvent) {
+  const reset = editorReset();
+  if (!reset || !(event.target instanceof Node) || !reset.contains(event.target)) {
+    return;
+  }
+  // 没有选区时把光标落到右键位置，保证菜单里的格式与插入动作有明确作用点
+  const selection = window.getSelection();
+  if (selection && (selection.rangeCount === 0 || selection.isCollapsed)) {
+    const range = caretRangeAt(event);
+    if (range && reset.contains(range.startContainer)) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+  hideGutterNow();
+  openEditorMenu(
+    event,
+    [
+      { id: "fmt:bold", label: "粗体", icon: menuIcons.bold },
+      { id: "fmt:italic", label: "斜体", icon: menuIcons.italic },
+      { id: "fmt:strike", label: "删除线", icon: menuIcons.strike },
+      {
+        id: "fmt:inline-code",
+        label: "行内代码",
+        icon: menuIcons.code,
+        divided: true,
+      },
+      { id: "fmt:link", label: "链接", icon: menuIcons.link },
+      { id: "fmt:quote", label: "引用", icon: menuIcons.quote, divided: true },
+      { id: "fmt:list", label: "无序列表", icon: menuIcons.list },
+      { id: "fmt:ordered", label: "有序列表", icon: menuIcons.ordered },
+      { id: "fmt:check", label: "任务列表", icon: menuIcons.check },
+      { id: "fmt:code", label: "代码块", icon: menuIcons.code },
+      { id: "fmt:table", label: "表格", icon: menuIcons.table },
+      {
+        id: "fmt:insert-before",
+        label: "上方插入段落",
+        icon: menuIcons.top,
+        divided: true,
+      },
+      {
+        id: "fmt:insert-after",
+        label: "下方插入段落",
+        icon: menuIcons.plus,
+      },
+      { id: "fmt:undo", label: "撤销", icon: menuIcons.undo, divided: true },
+      { id: "fmt:redo", label: "重做", icon: menuIcons.redo },
+    ],
+    {
+      "fmt:bold": () => runToolbarAction("bold"),
+      "fmt:italic": () => runToolbarAction("italic"),
+      "fmt:strike": () => runToolbarAction("strike"),
+      "fmt:inline-code": () => runToolbarAction("inline-code"),
+      "fmt:link": () => runToolbarAction("link"),
+      "fmt:quote": () => runToolbarAction("quote"),
+      "fmt:list": () => runToolbarAction("list"),
+      "fmt:ordered": () => runToolbarAction("ordered-list"),
+      "fmt:check": () => runToolbarAction("check"),
+      "fmt:code": () => runToolbarAction("code"),
+      "fmt:table": () => runToolbarAction("table"),
+      "fmt:insert-before": () => runToolbarAction("insert-before"),
+      "fmt:insert-after": () => runToolbarAction("insert-after"),
+      "fmt:undo": () => runToolbarAction("undo"),
+      "fmt:redo": () => runToolbarAction("redo"),
+    },
+  );
+}
+
 function onTitleKeydown(event: KeyboardEvent) {
   if (event.key === "Enter" && !event.isComposing) {
     event.preventDefault();
@@ -586,7 +1201,26 @@ onMounted(async () => {
     icon: "ant",
     theme: dark ? "dark" : "classic",
     cache: { enable: false },
-    toolbar: [],
+    // 工具栏整体隐藏；这些动作供右键菜单与块手柄调用
+    toolbar: [
+      "headings",
+      "bold",
+      "italic",
+      "strike",
+      "link",
+      "list",
+      "ordered-list",
+      "check",
+      "quote",
+      "inline-code",
+      "code",
+      "line",
+      "table",
+      "undo",
+      "redo",
+      "insert-before",
+      "insert-after",
+    ],
     outline: { enable: true, position: "right" },
     preview: {
       maxWidth: 800,
@@ -631,6 +1265,8 @@ onMounted(async () => {
   });
 
   window.addEventListener("keydown", onWindowKeydown, true);
+  editorEl.value?.addEventListener("contextmenu", onEditorContextMenu);
+  editorEl.value?.addEventListener("scroll", onEditorScroll, true);
   themeObserver = new MutationObserver(applyTheme);
   themeObserver.observe(document.documentElement, {
     attributes: true,
@@ -662,7 +1298,12 @@ onBeforeUnmount(() => {
   window.clearTimeout(contentTimer);
   window.clearTimeout(flyoutTimer);
   window.clearTimeout(inlineHtmlTimer);
+  window.clearTimeout(gutterTimer);
   window.removeEventListener("keydown", onWindowKeydown, true);
+  window.removeEventListener("mousemove", onDragMouseMove);
+  window.removeEventListener("mouseup", onDragMouseUp);
+  editorEl.value?.removeEventListener("contextmenu", onEditorContextMenu);
+  editorEl.value?.removeEventListener("scroll", onEditorScroll, true);
   themeObserver?.disconnect();
   vditor.value?.destroy();
   vditor.value = undefined;
@@ -682,11 +1323,68 @@ onBeforeUnmount(() => {
         @keydown="onTitleKeydown"
       />
     </div>
-    <div class="wb-md__body">
+    <div
+      ref="hostEl"
+      class="wb-md__body"
+      @mousemove="onEditorMouseMove"
+      @mouseleave="scheduleGutterHide"
+    >
       <div
         ref="editorEl"
         class="wb-md__editor"
         @paste.capture="onPasteCapture"
+      ></div>
+
+      <div
+        v-if="gutterBlock"
+        class="wb-block-gutter"
+        :class="{ 'is-compact': gutterPos.compact }"
+        :style="{
+          left: `${gutterPos.left}px`,
+          top: `${gutterPos.top}px`,
+          width: `${gutterPos.width}px`,
+        }"
+        @mouseenter="cancelGutterHide"
+      >
+        <button
+          type="button"
+          class="wb-block-gutter__btn"
+          title="在下方插入内容"
+          aria-label="在下方插入内容"
+          @mousedown.prevent
+          @click="onPlusClick"
+        >
+          <svg class="wb-block-gutter__icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="wb-block-gutter__btn wb-block-gutter__handle"
+          title="拖动排序 / 块操作"
+          aria-label="块操作"
+          @mousedown="onHandleMouseDown"
+          @click="onHandleClick"
+        >
+          <svg class="wb-block-gutter__icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <circle cx="5.5" cy="4" r="1.1" />
+            <circle cx="10.5" cy="4" r="1.1" />
+            <circle cx="5.5" cy="8" r="1.1" />
+            <circle cx="10.5" cy="8" r="1.1" />
+            <circle cx="5.5" cy="12" r="1.1" />
+            <circle cx="10.5" cy="12" r="1.1" />
+          </svg>
+        </button>
+      </div>
+
+      <div
+        v-if="dropLine"
+        class="wb-block-drop-line"
+        :style="{
+          top: `${dropLine.top}px`,
+          left: `${dropLine.left}px`,
+          width: `${dropLine.width}px`,
+        }"
       ></div>
 
       <template v-if="outlineAvailable">
@@ -738,6 +1436,15 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </div>
+
+    <ContextMenu
+      :open="menuOpen"
+      :x="menuPos.x"
+      :y="menuPos.y"
+      :items="menuItems"
+      @select="onMenuSelect"
+      @close="menuOpen = false"
+    />
   </div>
 </template>
 
@@ -784,6 +1491,78 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
+/* 块左侧悬停手柄：+ 插块，六点柄拖动排序/打开块菜单 */
+.wb-block-gutter {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  height: 26px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.wb-block-gutter:hover {
+  opacity: 1;
+}
+
+.wb-block-gutter__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 26px;
+  padding: 0;
+  color: var(--wb-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.wb-block-gutter__btn:hover {
+  color: var(--wb-text);
+  background: var(--wb-hover);
+}
+
+.wb-block-gutter__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.wb-block-gutter.is-compact .wb-block-gutter__btn {
+  width: 17px;
+}
+
+.wb-block-gutter.is-compact .wb-block-gutter__icon {
+  width: 12px;
+  height: 12px;
+}
+
+.wb-block-gutter__handle {
+  cursor: grab;
+}
+
+.wb-block-gutter__handle:active {
+  cursor: grabbing;
+}
+
+.wb-md__editor :deep(.wb-block-dragging) {
+  opacity: 0.35;
+}
+
+.wb-block-drop-line {
+  position: absolute;
+  z-index: 6;
+  height: 2px;
+  pointer-events: none;
+  background: var(--wb-accent);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--wb-accent-soft);
+}
+
 /* 大纲面板宽 250px，折叠按钮压在它的左边缘上 */
 .wb-md__body > .wb-outline-arrow {
   right: 242px;
@@ -800,6 +1579,17 @@ onBeforeUnmount(() => {
 
 .wb-md__editor :deep(.vditor-reset) {
   font-size: 16px;
+}
+
+/* 标题前的 H1/H2 角标会占掉手柄位置，隐藏后用字号表达层级 */
+.wb-md__editor :deep(.vditor-ir .vditor-reset > h1:before),
+.wb-md__editor :deep(.vditor-ir .vditor-reset > h2:before),
+.wb-md__editor :deep(.vditor-ir .vditor-reset > h3:before),
+.wb-md__editor :deep(.vditor-ir .vditor-reset > h4:before),
+.wb-md__editor :deep(.vditor-ir .vditor-reset > h5:before),
+.wb-md__editor :deep(.vditor-ir .vditor-reset > h6:before) {
+  content: none;
+  margin-left: 0;
 }
 
 /* Vditor 给行内代码设了 pre-wrap + break-word，表格里会被压成一两字符宽，改成不换行让表格横向滚动 */
